@@ -11,6 +11,12 @@ interface StatItemProps {
   suffix?: string;
 }
 
+interface StatsBarProps {
+  toolCount: number;
+  categoryCount: number;
+  featuredCount: number;
+}
+
 function StatItem({ icon: Icon, value, label, suffix = '' }: StatItemProps) {
   const [count, setCount] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
@@ -61,15 +67,15 @@ function StatItem({ icon: Icon, value, label, suffix = '' }: StatItemProps) {
   );
 }
 
-export function StatsBar() {
+export function StatsBar({ toolCount, categoryCount, featuredCount }: StatsBarProps) {
   return (
     <section className={styles.section}>
       <div className={styles.inner}>
-        <StatItem icon={Wrench} value={20} label="安全工具" suffix="+" />
+        <StatItem icon={Wrench} value={toolCount} label="安全工具" suffix="+" />
         <div className={styles.separator} />
-        <StatItem icon={Layers} value={8} label="工具分类" />
+        <StatItem icon={Layers} value={categoryCount} label="工具分类" />
         <div className={styles.separator} />
-        <StatItem icon={Users} value={50} label="贡献者" suffix="K+" />
+        <StatItem icon={Users} value={featuredCount} label="精选工具" />
         <div className={styles.separator} />
         <StatItem icon={Shield} value={99} label="开源覆盖" suffix="%" />
       </div>

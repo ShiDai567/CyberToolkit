@@ -2,16 +2,22 @@
 import { StatsBar } from '@/components/StatsBar';
 import { ToolCard } from '@/components/ToolCard';
 import { CategoryCard } from '@/components/CategoryCard';
-import { featuredTools, categories } from '@/data/tools';
+import { getHomeData } from '@/lib/api';
 import { ChevronRight, Terminal } from 'lucide-react';
 import Link from 'next/link';
 import styles from './page.module.css';
 
-export default function HomePage() {
+export default async function HomePage() {
+  const { stats, featuredTools, categories } = await getHomeData();
+
   return (
     <>
       <HeroSection />
-      <StatsBar />
+      <StatsBar
+        toolCount={stats.toolCount}
+        categoryCount={stats.categoryCount}
+        featuredCount={stats.featuredCount}
+      />
 
       <section className={styles.section}>
         <div className={styles.container}>

@@ -28,8 +28,8 @@ import {
   Network,
   Wheat,
 } from 'lucide-react';
-import { tools, categories, getToolsByCategory } from '@/data/tools';
 import { ToolCard } from '@/components/ToolCard';
+import { getToolById, getTools } from '@/lib/api';
 import styles from './page.module.css';
 
 const iconMap: Record<string, React.ElementType> = {
@@ -63,12 +63,12 @@ const difficultyConfig: Record<string, { label: string; color: string }> = {
 };
 
 export async function generateStaticParams() {
-  return tools.map((tool) => ({ id: tool.id }));
+  return [];
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const tool = tools.find((t) => t.id === id);
+  const tool = await getToolById(id);
 
   if (!tool) {
     return { title: '未找到工具' };
@@ -82,15 +82,15 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function ToolDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const tool = tools.find((t) => t.id === id);
+  const tool = await getToolById(id);
 
   if (!tool) {
     notFound();
   }
 
   const Icon = iconMap[tool.icon] || Radar;
-  const category = categories.find((c) => c.id === tool.category);
-  const relatedTools = getToolsByCategory(tool.category)
+  const category = tool.categoryInfo;
+  const relatedTools = (await getTools({ category: tool.category, page: 1, pageSize: 10 }))
     .filter((t) => t.id !== tool.id)
     .slice(0, 3);
   const diff = difficultyConfig[tool.difficulty];
@@ -109,7 +109,7 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ id:
           </div>
           <div className={styles.heroInfo}>
             <div className={styles.heroMeta}>
-              {category && <span className={styles.categoryBadge}>{category.name}</span>}
+              <span className={styles.categoryBadge}>{category.name}</span>
               <span
                 className={styles.difficultyBadge}
                 style={{ color: diff.color, borderColor: `${diff.color}40` }}
@@ -151,7 +151,7 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ id:
 
               <div className={styles.infoRow}>
                 <span className={styles.infoLabel}>分类</span>
-                <span className={styles.infoValue}>{category?.name || tool.category}</span>
+                <span className={styles.infoValue}>{category.name}</span>
               </div>
 
               <div className={styles.infoRow}>
