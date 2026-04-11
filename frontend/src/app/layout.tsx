@@ -2,6 +2,7 @@
 import './globals.css';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
+import { AuthProvider } from '@/components/AuthProvider';
 
 export const metadata: Metadata = {
   title: 'CyberToolkit - 网络安全工具集',
@@ -18,9 +19,11 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" data-scroll-behavior="smooth">
       <body className="scanline-overlay grid-bg">
-        <Navbar />
-        <main style={{ minHeight: '100vh', paddingTop: '80px' }}>{children}</main>
-        <Footer />
+        <AuthProvider>
+          <Navbar />
+          <main style={{ minHeight: '100vh', paddingTop: '80px' }}>{children}</main>
+          <Footer />
+        </AuthProvider>
       </body>
     </html>
   );

@@ -1,4 +1,4 @@
-.nav {
+﻿.nav {
   position: fixed;
   top: 12px;
   left: 16px;
@@ -105,6 +105,26 @@
   text-shadow: none;
 }
 
+.ghostBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.06);
+  color: #fecaca;
+  font-family: var(--font-heading);
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+
+.ghostBtn:hover {
+  background: rgba(239, 68, 68, 0.12);
+}
+
 .menuBtn {
   display: none;
   background: none;
@@ -155,6 +175,12 @@
     text-align: center;
     width: 100%;
     display: block;
+  }
+
+  .ghostBtn {
+    width: 100%;
+    justify-content: center;
+    margin-top: 8px;
   }
 
   .menuBtn {
