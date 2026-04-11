@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { Search } from 'lucide-react';
 import styles from './SearchBar.module.css';
@@ -9,7 +9,11 @@ interface SearchBarProps {
   placeholder?: string;
 }
 
-export function SearchBar({ value, onChange, placeholder = '搜索工具...' }: SearchBarProps) {
+export function SearchBar({
+  value,
+  onChange,
+  placeholder = '搜索工具...',
+}: SearchBarProps) {
   return (
     <div className={styles.wrapper}>
       <span className={styles.prompt}>&gt;_</span>

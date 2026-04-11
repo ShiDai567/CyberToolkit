@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState, useRef } from 'react';
 import { Wrench, Layers, Users, Shield } from 'lucide-react';
@@ -71,7 +71,7 @@ export function StatsBar() {
         <div className={styles.separator} />
         <StatItem icon={Users} value={50} label="贡献者" suffix="K+" />
         <div className={styles.separator} />
-        <StatItem icon={Shield} value={99} label="开源" suffix="%" />
+        <StatItem icon={Shield} value={99} label="开源覆盖" suffix="%" />
       </div>
     </section>
   );

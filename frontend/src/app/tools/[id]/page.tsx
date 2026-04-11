@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation';
+﻿import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -33,9 +33,26 @@ import { ToolCard } from '@/components/ToolCard';
 import styles from './page.module.css';
 
 const iconMap: Record<string, React.ElementType> = {
-  Radar, ShieldAlert, Crosshair, KeyRound, Wifi, Globe, Microscope, Eye,
-  Zap, ScanLine, Search, Atom, Bug, Database, Cpu, Activity, FolderSearch,
-  BrainCircuit, Network, Wheat,
+  Radar,
+  ShieldAlert,
+  Crosshair,
+  KeyRound,
+  Wifi,
+  Globe,
+  Microscope,
+  Eye,
+  Zap,
+  ScanLine,
+  Search,
+  Atom,
+  Bug,
+  Database,
+  Cpu,
+  Activity,
+  FolderSearch,
+  BrainCircuit,
+  Network,
+  Wheat,
 };
 
 const difficultyConfig: Record<string, { label: string; color: string }> = {
@@ -52,9 +69,13 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const tool = tools.find((t) => t.id === id);
-  if (!tool) return { title: '未找到工具' };
+
+  if (!tool) {
+    return { title: '未找到工具' };
+  }
+
   return {
-    title: `${tool.name} — CyberToolkit`,
+    title: `${tool.name} - CyberToolkit`,
     description: tool.description,
   };
 }
@@ -62,7 +83,10 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function ToolDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const tool = tools.find((t) => t.id === id);
-  if (!tool) notFound();
+
+  if (!tool) {
+    notFound();
+  }
 
   const Icon = iconMap[tool.icon] || Radar;
   const category = categories.find((c) => c.id === tool.category);
@@ -74,22 +98,18 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ id:
   return (
     <div className={styles.page}>
       <div className={styles.container}>
-        {/* Back link */}
         <Link href="/tools" className={styles.backLink}>
           <ArrowLeft size={16} />
           <span>返回工具列表</span>
         </Link>
 
-        {/* Hero */}
         <div className={styles.hero}>
           <div className={styles.heroIcon}>
             <Icon size={40} />
           </div>
           <div className={styles.heroInfo}>
             <div className={styles.heroMeta}>
-              {category && (
-                <span className={styles.categoryBadge}>{category.name}</span>
-              )}
+              {category && <span className={styles.categoryBadge}>{category.name}</span>}
               <span
                 className={styles.difficultyBadge}
                 style={{ color: diff.color, borderColor: `${diff.color}40` }}
@@ -102,9 +122,7 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ id:
           </div>
         </div>
 
-        {/* Content Grid */}
         <div className={styles.contentGrid}>
-          {/* Main Content */}
           <div className={styles.mainContent}>
             <div className={styles.section}>
               <h2 className={styles.sectionTitle}>
@@ -127,16 +145,13 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ id:
             </div>
           </div>
 
-          {/* Sidebar */}
           <div className={styles.sidebar}>
             <div className={styles.infoCard}>
               <h3 className={styles.infoTitle}>快速信息</h3>
 
               <div className={styles.infoRow}>
                 <span className={styles.infoLabel}>分类</span>
-                <span className={styles.infoValue}>
-                  {category?.name || tool.category}
-                </span>
+                <span className={styles.infoValue}>{category?.name || tool.category}</span>
               </div>
 
               <div className={styles.infoRow}>
@@ -165,7 +180,7 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ id:
                     className={styles.secondaryLink}
                   >
                     <Github size={16} />
-                    <span>源代码</span>
+                    <span>源码仓库</span>
                   </a>
                 )}
               </div>
@@ -173,11 +188,10 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ id:
           </div>
         </div>
 
-        {/* Related Tools */}
         {relatedTools.length > 0 && (
           <div className={styles.relatedSection}>
             <h2 className={styles.relatedTitle}>
-              相关 <span className="neon-text">工具</span>
+              相关<span className="neon-text">工具</span>
             </h2>
             <div className={styles.relatedGrid}>
               {relatedTools.map((t) => (

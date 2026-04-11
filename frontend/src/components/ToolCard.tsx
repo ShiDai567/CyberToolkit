@@ -1,4 +1,4 @@
-import Link from 'next/link';
+﻿import Link from 'next/link';
 import {
   ExternalLink,
   Github,
@@ -86,22 +86,12 @@ export function ToolCard({ tool }: { tool: Tool }) {
       </div>
 
       <div className={styles.links}>
-        <a
-          href={tool.website}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={styles.linkBtn}
-        >
+        <a href={tool.website} target="_blank" rel="noopener noreferrer" className={styles.linkBtn}>
           <ExternalLink size={14} />
           <span>官网</span>
         </a>
         {tool.github && (
-          <a
-            href={tool.github}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.linkBtn}
-          >
+          <a href={tool.github} target="_blank" rel="noopener noreferrer" className={styles.linkBtn}>
             <Github size={14} />
             <span>源码</span>
           </a>

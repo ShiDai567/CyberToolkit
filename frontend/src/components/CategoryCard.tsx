@@ -1,3 +1,4 @@
+﻿import Link from 'next/link';
 import {
   Radar,
   ShieldAlert,
@@ -26,7 +27,7 @@ export function CategoryCard({ category }: { category: Category }) {
   const Icon = iconMap[category.icon] || Radar;
 
   return (
-    <a href={`/tools?category=${category.id}`} className={styles.card}>
+    <Link href={`/tools?category=${category.id}`} className={styles.card}>
       <div className={styles.iconWrap}>
         <Icon size={28} />
       </div>
@@ -34,6 +35,6 @@ export function CategoryCard({ category }: { category: Category }) {
       <p className={styles.description}>{category.description}</p>
       <span className={styles.count}>{category.toolCount} 个工具</span>
       <div className={styles.glow} />
-    </a>
+    </Link>
   );
 }

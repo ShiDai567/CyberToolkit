@@ -1,8 +1,7 @@
-'use client';
+﻿'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
 import { ToolCard } from '@/components/ToolCard';
 import { SearchBar } from '@/components/SearchBar';
 import { tools, categories } from '@/data/tools';
@@ -13,7 +12,7 @@ import styles from './page.module.css';
 function ToolsContent() {
   const searchParams = useSearchParams();
   const initialCategory = searchParams.get('category') || '';
-  
+
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty | ''>('');
@@ -34,7 +33,7 @@ function ToolsContent() {
   }, [search, selectedCategory, selectedDifficulty]);
 
   const difficulties: { value: Difficulty | ''; label: string }[] = [
-    { value: '', label: '所有等级' },
+    { value: '', label: '全部等级' },
     { value: 'beginner', label: '入门' },
     { value: 'intermediate', label: '中级' },
     { value: 'advanced', label: '高级' },
@@ -44,26 +43,18 @@ function ToolsContent() {
   return (
     <div className={styles.page}>
       <div className={styles.container}>
-        {/* Header */}
         <div className={styles.header}>
           <span className={styles.tag}>
             <Terminal size={12} /> 工具库
           </span>
           <h1 className={styles.title}>
-            所有 <span className="neon-text">工具</span>
+            全部<span className="neon-text">工具</span>
           </h1>
-          <p className={styles.desc}>
-            浏览和搜索我们完整的网络安全工具集合
-          </p>
+          <p className={styles.desc}>浏览、搜索并按分类筛选整个工具集合。</p>
         </div>
 
-        {/* Filters */}
         <div className={styles.filters}>
-          <SearchBar
-            value={search}
-            onChange={setSearch}
-            placeholder="搜索工具、标签、分类..."
-          />
+          <SearchBar value={search} onChange={setSearch} placeholder="搜索工具、标签、分类..." />
 
           <div className={styles.filterRow}>
             <div className={styles.filterGroup}>
@@ -95,7 +86,9 @@ function ToolsContent() {
                   <button
                     key={d.value}
                     className={`${styles.filterBtn} ${selectedDifficulty === d.value ? styles.filterBtnActive : ''}`}
-                    onClick={() => setSelectedDifficulty(d.value === selectedDifficulty ? '' : d.value as Difficulty | '')}
+                    onClick={() =>
+                      setSelectedDifficulty(d.value === selectedDifficulty ? '' : (d.value as Difficulty | ''))
+                    }
                   >
                     {d.label}
                   </button>
@@ -105,14 +98,10 @@ function ToolsContent() {
           </div>
         </div>
 
-        {/* Results */}
         <div className={styles.results}>
-          <span className={styles.resultCount}>
-            找到 {filteredTools.length} 个工具
-          </span>
+          <span className={styles.resultCount}>找到 {filteredTools.length} 个工具</span>
         </div>
 
-        {/* Tools Grid */}
         {filteredTools.length > 0 ? (
           <div className={styles.grid}>
             {filteredTools.map((tool) => (
@@ -121,9 +110,7 @@ function ToolsContent() {
           </div>
         ) : (
           <div className={styles.empty}>
-            <p className={styles.emptyText}>
-              未找到符合条件的工具。
-            </p>
+            <p className={styles.emptyText}>没有找到符合当前条件的工具。</p>
             <button
               className={styles.resetBtn}
               onClick={() => {

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Shield } from 'lucide-react';
@@ -20,7 +20,6 @@ export function HeroSection() {
   const [charIndex, setCharIndex] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Matrix rain effect
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -68,7 +67,6 @@ export function HeroSection() {
     };
   }, []);
 
-  // Typing effect
   useEffect(() => {
     const currentText = TYPING_TEXTS[textIndex];
     const speed = isDeleting ? 30 : 70;
@@ -103,14 +101,12 @@ export function HeroSection() {
       <div className={styles.content}>
         <div className={styles.badge}>
           <Shield size={14} />
-          <span>安全武器库 v2.0</span>
+          <span>安全工具库 v2.0</span>
         </div>
 
         <h1 className={styles.title}>
           <span className={styles.titleLine}>Your Ultimate</span>
-          <span className={`${styles.titleLine} neon-text`}>
-            Cybersecurity
-          </span>
+          <span className={`${styles.titleLine} neon-text`}>Cybersecurity</span>
           <span className={styles.titleLine}>Toolkit</span>
         </h1>
 
@@ -129,8 +125,7 @@ export function HeroSection() {
         </div>
 
         <p className={styles.subtitle}>
-          探索 20+ 款精选网络安全工具。
-          从网络扫描到数字取证 —— 一切尽在掌握。
+          探索 20+ 款精选网络安全工具，从扫描、评估到取证与情报收集，统一整理到一个入口里。
         </p>
 
         <div className={styles.actions}>
