@@ -1,8 +1,9 @@
-export interface AuthUser {
+﻿export interface AuthUser {
   id: string;
   email: string;
   displayName: string;
   role: string;
+  createdAt?: string;
 }
 
 export interface AuthSession {

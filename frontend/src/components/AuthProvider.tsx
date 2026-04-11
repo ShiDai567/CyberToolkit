@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import {
   createContext,
@@ -23,7 +23,7 @@ interface AuthContextValue {
   isLoading: boolean;
   isAuthenticated: boolean;
   signIn: (session: AuthSession) => void;
-  signOut: () => void;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const response = await fetch(`${getClientAPIBaseURL()}/api/v1/admin/me`, {
+        const response = await fetch(`${getClientAPIBaseURL()}/api/v1/auth/me`, {
           headers: {
             Authorization: `Bearer ${stored.accessToken}`,
           },
@@ -92,10 +92,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session.user);
         setToken(session.accessToken);
       },
-      signOut: () => {
+      signOut: async () => {
+        const currentToken = token;
         clearSession();
         setUser(null);
         setToken(null);
+
+        if (!currentToken) {
+          return;
+        }
+
+        try {
+          await fetch(`${getClientAPIBaseURL()}/api/v1/auth/logout`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${currentToken}`,
+            },
+          });
+        } catch {
+          // Best-effort logout. Local session has already been cleared.
+        }
       },
     }),
     [isLoading, token, user]

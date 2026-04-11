@@ -10,17 +10,17 @@ type Config struct {
 	Addr          string
 	AdminEmail    string
 	AdminPassword string
-	AdminToken    string
+	CORSOrigins   []string
 }
 
 func Load() Config {
 	loadDotEnv(".env")
 
 	return Config{
-		Addr:          getenv("APP_ADDR", ":8080"),
-		AdminEmail:    getenv("APP_ADMIN_EMAIL", "admin@cybertoolkit.local"),
-		AdminPassword: getenv("APP_ADMIN_PASSWORD", "admin123456"),
-		AdminToken:    getenv("APP_ADMIN_TOKEN", "dev-admin-token"),
+		Addr:          getAddr(),
+		AdminEmail:    getenvCompat([]string{"ADMIN_EMAIL", "APP_ADMIN_EMAIL"}, "admin@cybertoolkit.local"),
+		AdminPassword: getenvCompat([]string{"ADMIN_PASSWORD", "APP_ADMIN_PASSWORD"}, "admin123456"),
+		CORSOrigins:   getCORSOrigins(),
 	}
 }
 
@@ -30,6 +30,43 @@ func getenv(key, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func getenvCompat(keys []string, fallback string) string {
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			return value
+		}
+	}
+	return fallback
+}
+
+func getAddr() string {
+	port := getenvCompat([]string{"PORT"}, "")
+	if port != "" {
+		if strings.HasPrefix(port, ":") {
+			return port
+		}
+		return ":" + port
+	}
+
+	return getenvCompat([]string{"APP_ADDR"}, ":8080")
+}
+
+func getCORSOrigins() []string {
+	raw := getenvCompat([]string{"CORS_ALLOWED_ORIGINS"}, "http://localhost:3000,http://127.0.0.1:3000")
+	parts := strings.Split(raw, ",")
+	origins := make([]string, 0, len(parts))
+
+	for _, part := range parts {
+		origin := strings.TrimSpace(part)
+		if origin == "" {
+			continue
+		}
+		origins = append(origins, origin)
+	}
+
+	return origins
 }
 
 func loadDotEnv(path string) {

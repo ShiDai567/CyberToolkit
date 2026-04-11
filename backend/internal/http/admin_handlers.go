@@ -7,7 +7,7 @@ import (
 	"cybertoolkit/backend/internal/domain"
 )
 
-func (api *API) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
+func (api *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
@@ -22,17 +22,79 @@ func (api *API) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if request.Email != api.config.AdminEmail || request.Password != api.config.AdminPassword {
-		writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "invalid email or password", nil)
+	accessToken, refreshToken, user, err := api.store.Authenticate(request.Email, request.Password)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", err.Error(), nil)
 		return
 	}
 
-	user := api.store.AdminUser()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"accessToken":  api.config.AdminToken,
-		"refreshToken": api.config.AdminToken,
+		"accessToken":  accessToken,
+		"refreshToken": refreshToken,
 		"user":         user,
 	}, nil)
+}
+
+func (api *API) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+		return
+	}
+
+	var request struct {
+		Email       string `json:"email"`
+		Password    string `json:"password"`
+		DisplayName string `json:"displayName"`
+	}
+	if err := decodeJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_JSON", "invalid request body", nil)
+		return
+	}
+	if request.Email == "" || request.Password == "" || request.DisplayName == "" {
+		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "email, password and displayName are required", nil)
+		return
+	}
+
+	accessToken, refreshToken, user, err := api.store.Register(request.Email, request.Password, request.DisplayName)
+	if err != nil {
+		writeError(w, http.StatusConflict, "REGISTER_ERROR", err.Error(), nil)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"accessToken":  accessToken,
+		"refreshToken": refreshToken,
+		"user":         user,
+	}, nil)
+}
+
+func (api *API) handleMe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+		return
+	}
+
+	auth := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(auth, "Bearer ")
+	user, ok := api.store.ValidateSession(token)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid token", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, user, nil)
+}
+
+func (api *API) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+		return
+	}
+
+	auth := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(auth, "Bearer ")
+	api.store.DeleteSession(token)
+	writeJSON(w, http.StatusOK, map[string]bool{"loggedOut": true}, nil)
 }
 
 func (api *API) handleAdminMe(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +102,15 @@ func (api *API) handleAdminMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
 	}
-	writeJSON(w, http.StatusOK, api.store.AdminUser(), nil)
+
+	auth := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(auth, "Bearer ")
+	user, ok := api.store.ValidateSession(token)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid token", nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, user, nil)
 }
 
 func (api *API) handleAdminCategories(w http.ResponseWriter, r *http.Request) {

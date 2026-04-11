@@ -83,11 +83,13 @@ type Submission struct {
 	CreatedAt      time.Time        `json:"createdAt"`
 }
 
-type AdminUser struct {
-	ID          string `json:"id"`
-	Email       string `json:"email"`
-	DisplayName string `json:"displayName"`
-	Role        string `json:"role"`
+type User struct {
+	ID           string    `json:"id"`
+	Email        string    `json:"email"`
+	DisplayName  string    `json:"displayName"`
+	PasswordHash string    `json:"-"`
+	Role         string    `json:"role"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 type ToolFilters struct {

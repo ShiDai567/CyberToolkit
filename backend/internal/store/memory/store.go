@@ -1,6 +1,9 @@
 package memory
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"sort"
 	"strings"
@@ -17,11 +20,13 @@ type Store struct {
 	tools        []domain.Tool
 	toolTags     []domain.ToolTag
 	submissions  []domain.Submission
-	adminUser    domain.AdminUser
+	users        []domain.User
+	sessions     map[string]domain.User
 	nextCategory int
 	nextTag      int
 	nextTool     int
 	nextSubmit   int
+	nextUser     int
 }
 
 func NewStore() *Store {
@@ -59,22 +64,25 @@ func NewStore() *Store {
 		{ToolID: "tool_4", TagID: "tag_5"},
 	}
 
+	users := []domain.User{
+		{ID: "user_1", Email: "admin@cybertoolkit.local", DisplayName: "Admin", PasswordHash: hashPassword("admin123456"), Role: "admin", CreatedAt: now},
+		{ID: "user_2", Email: "editor@cybertoolkit.local", DisplayName: "Editor Demo", PasswordHash: hashPassword("editor123456"), Role: "editor", CreatedAt: now},
+		{ID: "user_3", Email: "viewer@cybertoolkit.local", DisplayName: "Viewer Demo", PasswordHash: hashPassword("viewer123456"), Role: "viewer", CreatedAt: now},
+	}
+
 	return &Store{
-		categories:  categories,
-		tags:        tags,
-		tools:       tools,
-		toolTags:    toolTags,
-		submissions: []domain.Submission{},
-		adminUser: domain.AdminUser{
-			ID:          "user_admin",
-			Email:       "admin@cybertoolkit.local",
-			DisplayName: "Admin",
-			Role:        "admin",
-		},
+		categories:   categories,
+		tags:         tags,
+		tools:        tools,
+		toolTags:     toolTags,
+		submissions:  []domain.Submission{},
+		users:        users,
+		sessions:     make(map[string]domain.User),
 		nextCategory: len(categories) + 1,
 		nextTag:      len(tags) + 1,
 		nextTool:     len(tools) + 1,
 		nextSubmit:   1,
+		nextUser:     len(users) + 1,
 	}
 }
 
@@ -373,8 +381,89 @@ func (s *Store) CreateSubmission(submission domain.Submission) domain.Submission
 	return submission
 }
 
-func (s *Store) AdminUser() domain.AdminUser {
-	return s.adminUser
+func (s *Store) Authenticate(email, password string) (string, string, domain.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	passwordHash := hashPassword(password)
+	for _, user := range s.users {
+		if strings.EqualFold(user.Email, email) && user.PasswordHash == passwordHash {
+			accessToken, err := randomToken()
+			if err != nil {
+				return "", "", domain.User{}, err
+			}
+			refreshToken, err := randomToken()
+			if err != nil {
+				return "", "", domain.User{}, err
+			}
+			s.sessions[accessToken] = publicUser(user)
+			return accessToken, refreshToken, publicUser(user), nil
+		}
+	}
+
+	return "", "", domain.User{}, errors.New("invalid email or password")
+}
+
+func (s *Store) Register(email, password, displayName string) (string, string, domain.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, user := range s.users {
+		if strings.EqualFold(user.Email, email) {
+			return "", "", domain.User{}, errors.New("email already registered")
+		}
+	}
+
+	now := time.Now().UTC()
+	user := domain.User{
+		ID:           "user_" + itoa(s.nextUser),
+		Email:        email,
+		DisplayName:  displayName,
+		PasswordHash: hashPassword(password),
+		Role:         "viewer",
+		CreatedAt:    now,
+	}
+	s.nextUser++
+	s.users = append(s.users, user)
+
+	accessToken, err := randomToken()
+	if err != nil {
+		return "", "", domain.User{}, err
+	}
+	refreshToken, err := randomToken()
+	if err != nil {
+		return "", "", domain.User{}, err
+	}
+	public := publicUser(user)
+	s.sessions[accessToken] = public
+	return accessToken, refreshToken, public, nil
+}
+
+func (s *Store) ValidateSession(token string) (domain.User, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	user, ok := s.sessions[token]
+	return user, ok
+}
+
+func (s *Store) DeleteSession(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.sessions, token)
+}
+
+func (s *Store) FindUserByEmail(email string) (domain.User, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, user := range s.users {
+		if strings.EqualFold(user.Email, email) {
+			return publicUser(user), true
+		}
+	}
+	return domain.User{}, false
 }
 
 func (s *Store) matchCategory(categoryID, categorySlug string) bool {
@@ -461,4 +550,22 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(digits)
+}
+
+func randomToken() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+func hashPassword(password string) string {
+	hash := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(hash[:])
+}
+
+func publicUser(user domain.User) domain.User {
+	user.PasswordHash = ""
+	return user
 }

@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import styles from './page.module.css';
+import styles from '../admin/page.module.css';
 
-export default function AdminPage() {
+export default function AccountPage() {
   const router = useRouter();
   const { user, isLoading, isAuthenticated, signOut } = useAuth();
 
@@ -22,23 +22,9 @@ export default function AdminPage() {
       <div className={styles.empty}>
         <div className={styles.emptyCard}>
           <h1>未登录</h1>
-          <p className={styles.emptyText}>需要先登录管理员账户才能访问控制台。</p>
-          <Link href="/login?redirect=/admin" className={styles.loginLink}>
+          <p className={styles.emptyText}>需要先登录账户才能访问个人中心。</p>
+          <Link href="/login?redirect=/account" className={styles.loginLink}>
             前往登录
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  if (user.role !== 'admin') {
-    return (
-      <div className={styles.empty}>
-        <div className={styles.emptyCard}>
-          <h1>权限不足</h1>
-          <p className={styles.emptyText}>当前账户已登录，但不具备管理员权限。</p>
-          <Link href="/account" className={styles.loginLink}>
-            返回个人中心
           </Link>
         </div>
       </div>
@@ -51,9 +37,9 @@ export default function AdminPage() {
         <div className={styles.header}>
           <div>
             <h1 className={styles.title}>
-              管理<span className="neon-text">控制台</span>
+              个人<span className="neon-text">中心</span>
             </h1>
-            <p className={styles.desc}>当前页面用于确认管理员登录链路和后台权限入口已经可用。</p>
+            <p className={styles.desc}>当前页面用于展示登录后的用户身份和角色信息。</p>
           </div>
           <button
             className={styles.logout}

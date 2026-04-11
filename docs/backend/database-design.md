@@ -1,66 +1,41 @@
-# CyberToolkit 数据库设计
+﻿# CyberToolkit 数据库设计
 
-## 目标
+本文档描述当前项目采用的关系型数据设计草案，对应实现参考：
 
-本设计面向当前 `CyberToolkit` 的核心场景：
-
-- 工具目录展示
-- 分类与标签筛选
-- 工具详情页
-- 搜索
-- 后台管理工具与分类
-- 为后续收藏、提交、审核、统计预留扩展能力
+- `backend/sql/schema.sql`
+- `backend/internal/domain/models.go`
 
 推荐数据库：`PostgreSQL 16+`
 
-## 设计原则
+## 设计目标
 
-- 公开展示数据与后台管理数据分层
-- 优先规范化，避免把分类、标签硬编码在前端文件里
-- 使用 `slug` 作为稳定 URL 标识
-- 使用 `status` 控制发布状态，避免草稿直接暴露
-- 通过关联表支持多标签、多分类扩展
+- 支撑工具目录展示、分类筛选、标签筛选、详情页
+- 支撑登录注册和后台管理
+- 为后续 PostgreSQL 持久化保留结构基础
 
-## 实体关系
+## 核心实体
 
-核心实体：
+- `users`
+- `categories`
+- `tags`
+- `tools`
+- `tool_tags`
+- `tool_submissions`
+- `audit_logs`
 
-- `users`：后台用户
-- `categories`：工具分类
-- `tools`：工具主表
-- `tags`：标签
-- `tool_tags`：工具与标签多对多关系
-- `tool_links`：工具外部链接
-- `tool_submissions`：用户提交或编辑建议
-- `audit_logs`：后台审计日志
-
-关系说明：
-
-- 一个 `category` 可关联多个 `tools`
-- 一个 `tool` 可关联多个 `tags`
-- 一个 `tool` 可关联多个 `tool_links`
-- 一个 `user` 可创建或更新多个 `tools`
-- 一个 `user` 可提交多个 `tool_submissions`
-
-## 枚举建议
-
-### tool_status
-
-- `draft`
-- `published`
-- `archived`
-
-### submission_status
-
-- `pending`
-- `approved`
-- `rejected`
+## 枚举约定
 
 ### user_role
 
 - `admin`
 - `editor`
 - `viewer`
+
+### tool_status
+
+- `draft`
+- `published`
+- `archived`
 
 ### tool_difficulty
 
@@ -69,316 +44,173 @@
 - `advanced`
 - `expert`
 
-## 表结构
+### submission_status
 
-### 1. users
+- `pending`
+- `approved`
+- `rejected`
 
-用于后台登录和权限控制。
+## 表设计
 
-```sql
-create table users (
-  id uuid primary key default gen_random_uuid(),
-  email varchar(255) not null unique,
-  password_hash varchar(255) not null,
-  display_name varchar(100) not null,
-  role varchar(20) not null default 'editor',
-  is_active boolean not null default true,
-  last_login_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint chk_users_role
-    check (role in ('admin', 'editor', 'viewer'))
-);
-```
+### users
 
-### 2. categories
+用于登录、角色控制和后台管理。
+
+关键字段：
+
+- `email`
+- `password_hash`
+- `display_name`
+- `role`
+- `is_active`
+- `last_login_at`
+
+说明：
+
+- 当前 Go 内存版已支持 `admin / editor / viewer`
+- 正式落库后建议增加唯一索引、登录审计和密码重置字段
+
+### categories
 
 工具分类表。
 
-```sql
-create table categories (
-  id uuid primary key default gen_random_uuid(),
-  slug varchar(100) not null unique,
-  name varchar(100) not null unique,
-  description text,
-  icon varchar(50),
-  sort_order integer not null default 0,
-  is_visible boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-```
+关键字段：
 
-### 3. tools
+- `slug`
+- `name`
+- `description`
+- `icon`
+- `sort_order`
+- `is_visible`
 
-工具主表。
+说明：
 
-```sql
-create table tools (
-  id uuid primary key default gen_random_uuid(),
-  slug varchar(150) not null unique,
-  name varchar(150) not null unique,
-  short_description varchar(280) not null,
-  long_description text not null,
-  category_id uuid not null references categories(id),
-  difficulty varchar(20) not null,
-  icon varchar(50),
-  featured boolean not null default false,
-  status varchar(20) not null default 'draft',
-  source_type varchar(30) not null default 'manual',
-  view_count integer not null default 0,
-  favorite_count integer not null default 0,
-  published_at timestamptz,
-  created_by uuid references users(id),
-  updated_by uuid references users(id),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint chk_tools_difficulty
-    check (difficulty in ('beginner', 'intermediate', 'advanced', 'expert')),
-  constraint chk_tools_status
-    check (status in ('draft', 'published', 'archived'))
-);
-```
+- 前台默认只展示 `is_visible = true`
+- 后台可以看到全部分类
 
-字段说明：
-
-- `slug`：详情页 URL 标识，替代当前前端的 `id`
-- `short_description`：列表卡片摘要
-- `long_description`：详情页正文
-- `source_type`：保留未来从脚本、爬虫或外部源同步的能力
-- `status`：控制是否对外可见
-
-### 4. tags
+### tags
 
 标签主表。
 
-```sql
-create table tags (
-  id uuid primary key default gen_random_uuid(),
-  slug varchar(100) not null unique,
-  name varchar(100) not null unique,
-  created_at timestamptz not null default now()
-);
-```
+关键字段：
 
-### 5. tool_tags
+- `slug`
+- `name`
 
-工具与标签关联表。
+### tools
 
-```sql
-create table tool_tags (
-  tool_id uuid not null references tools(id) on delete cascade,
-  tag_id uuid not null references tags(id) on delete cascade,
-  primary key (tool_id, tag_id)
-);
-```
+工具主表。
 
-### 6. tool_links
+关键字段：
 
-用于管理官网、源码、文档等外部链接，不把链接字段锁死在工具主表。
-
-```sql
-create table tool_links (
-  id uuid primary key default gen_random_uuid(),
-  tool_id uuid not null references tools(id) on delete cascade,
-  link_type varchar(30) not null,
-  label varchar(50) not null,
-  url text not null,
-  sort_order integer not null default 0,
-  created_at timestamptz not null default now(),
-  constraint chk_tool_links_type
-    check (link_type in ('website', 'github', 'docs', 'download', 'other'))
-);
-```
-
-当前前端可直接映射：
-
-- 官网：`website`
-- 源码：`github`
-
-### 7. tool_submissions
-
-用于未来开放用户提交新工具或修正建议。
-
-```sql
-create table tool_submissions (
-  id uuid primary key default gen_random_uuid(),
-  submitted_by uuid references users(id),
-  tool_id uuid references tools(id),
-  submitter_email varchar(255),
-  payload jsonb not null,
-  status varchar(20) not null default 'pending',
-  reviewer_id uuid references users(id),
-  review_note text,
-  created_at timestamptz not null default now(),
-  reviewed_at timestamptz,
-  constraint chk_tool_submissions_status
-    check (status in ('pending', 'approved', 'rejected'))
-);
-```
-
-### 8. audit_logs
-
-后台操作审计。
-
-```sql
-create table audit_logs (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references users(id),
-  action varchar(50) not null,
-  resource_type varchar(50) not null,
-  resource_id uuid,
-  before_data jsonb,
-  after_data jsonb,
-  created_at timestamptz not null default now()
-);
-```
-
-## 索引设计
-
-```sql
-create index idx_categories_sort_order on categories(sort_order);
-
-create index idx_tools_category_id on tools(category_id);
-create index idx_tools_status on tools(status);
-create index idx_tools_featured on tools(featured);
-create index idx_tools_published_at on tools(published_at desc);
-create index idx_tools_category_status on tools(category_id, status);
-
-create index idx_tool_links_tool_id on tool_links(tool_id);
-
-create index idx_tool_submissions_status on tool_submissions(status);
-create index idx_audit_logs_user_id on audit_logs(user_id);
-create index idx_audit_logs_resource on audit_logs(resource_type, resource_id);
-```
-
-### 搜索索引
-
-如果使用 PostgreSQL 全文搜索，建议增加：
-
-```sql
-alter table tools
-add column search_vector tsvector;
-
-create index idx_tools_search_vector
-  on tools using gin(search_vector);
-```
-
-可由触发器维护：
-
+- `slug`
 - `name`
 - `short_description`
 - `long_description`
-- 标签名聚合文本
+- `category_id`
+- `difficulty`
+- `icon`
+- `featured`
+- `status`
+- `website_url`
+- `github_url`
+- `view_count`
+- `favorite_count`
+- `published_at`
 
-如果后续搜索需求更复杂，再升级为：
+说明：
 
-- `Meilisearch`
-- `Typesense`
-- `Elasticsearch`
+- 当前版本把链接直接放在 `tools` 表中，保留 `website_url` 和 `github_url`
+- 这是当前阶段的简化设计，避免过早拆出 `tool_links`
+- 如果后续出现文档、下载、演示、视频等多类型链接，再考虑拆成独立表
 
-## 初期最小可用版本
+### tool_tags
 
-如果你现在只想先把后端跑起来，最小表集是：
+工具和标签的多对多关系表。
 
+作用：
+
+- 一个工具可以挂多个标签
+- 一个标签可以被多个工具复用
+- 保持结构规范，便于筛选、统计和后台管理
+
+### tool_submissions
+
+收集用户提交的新工具或纠错建议。
+
+关键字段：
+
+- `submitted_by`
+- `tool_id`
+- `submitter_email`
+- `payload`
+- `status`
+- `reviewer_id`
+- `review_note`
+
+### audit_logs
+
+后台审计日志。
+
+关键字段：
+
+- `user_id`
+- `action`
+- `resource_type`
+- `resource_id`
+- `before_data`
+- `after_data`
+
+## 关系说明
+
+- 一个 `category` 对应多个 `tools`
+- 一个 `tool` 对应多个 `tags`
+- 一个 `tag` 对应多个 `tools`
+- 一个 `user` 可以提交多个 `tool_submissions`
+- 一个 `user` 可以产生多条 `audit_logs`
+
+## 索引建议
+
+当前 `schema.sql` 已包含这些重点索引：
+
+- `categories(sort_order)`
+- `tools(category_id)`
+- `tools(status)`
+- `tools(featured)`
+- `tools(published_at desc)`
+- `tools(category_id, status)`
+- `tool_submissions(status)`
+- `audit_logs(user_id)`
+- `audit_logs(resource_type, resource_id)`
+
+## 为什么保留 tool_tags
+
+`tool_tags` 是标准多对多建模，不建议把标签直接塞进 `tools` 表。
+
+原因：
+
+- 一个工具有多个标签
+- 一个标签会被多个工具复用
+- 需要支持按标签筛选、统计和后台维护
+
+## 为什么当前没有 tool_links
+
+当前版本只稳定支持两种链接：
+
+- 官网 `website_url`
+- 源码 `github_url`
+
+对于这个阶段，把它们直接放在 `tools` 表里更简单。等链接类型明显变多，再拆 `tool_links` 更合适。
+
+## 最小可用表集
+
+如果先做 PostgreSQL 持久化，最小闭环是：
+
+- `users`
 - `categories`
-- `tools`
 - `tags`
+- `tools`
 - `tool_tags`
-- `tool_links`
+- `tool_submissions`
 
-这五张表已经足够支撑：
-
-- 首页精选
-- 工具列表
-- 分类筛选
-- 标签展示
-- 工具详情
-- 搜索
-
-## 示例查询
-
-### 查询已发布的精选工具
-
-```sql
-select
-  t.id,
-  t.slug,
-  t.name,
-  t.short_description,
-  t.difficulty,
-  t.icon,
-  c.name as category_name
-from tools t
-join categories c on c.id = t.category_id
-where t.status = 'published'
-  and t.featured = true
-order by t.published_at desc nulls last, t.created_at desc;
-```
-
-### 查询工具详情及标签
-
-```sql
-select
-  t.*,
-  c.name as category_name,
-  c.slug as category_slug
-from tools t
-join categories c on c.id = t.category_id
-where t.slug = $1
-  and t.status = 'published';
-```
-
-```sql
-select tg.name, tg.slug
-from tool_tags tt
-join tags tg on tg.id = tt.tag_id
-where tt.tool_id = $1
-order by tg.name;
-```
-
-## 与当前前端字段映射
-
-当前前端 `Tool` 类型：
-
-```ts
-interface Tool {
-  id: string;
-  name: string;
-  description: string;
-  longDescription: string;
-  category: string;
-  tags: string[];
-  website: string;
-  github?: string;
-  difficulty: Difficulty;
-  icon: string;
-  featured?: boolean;
-}
-```
-
-建议后端响应映射：
-
-- `id` <- `tools.slug`
-- `description` <- `tools.short_description`
-- `longDescription` <- `tools.long_description`
-- `category` <- `categories.slug`
-- `tags` <- 聚合后的标签名数组
-- `website` / `github` <- 从 `tool_links` 按类型取出
-
-## 后续扩展位
-
-数据库层面已经预留：
-
-- 收藏：`user_favorites`
-- 评论：`tool_comments`
-- 评分：`tool_ratings`
-- 多语言：`tool_translations`
-- 自动抓取：`sync_jobs` / `sync_runs`
-- SEO：`seo_meta`
-
-如果后面你确认需要，我下一步可以直接把这份设计转成：
-
-- `Prisma Schema`
-- `PostgreSQL DDL`
-- `OpenAPI 3.1 YAML`
+`audit_logs` 可以后补，但建议 schema 先保留。

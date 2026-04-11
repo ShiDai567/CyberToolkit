@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Shield, Terminal, Menu, X, LogIn, LogOut, LayoutDashboard } from 'lucide-react';
+import { Shield, Terminal, Menu, X, LogIn, LogOut, UserRound, LayoutDashboard } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import styles from './Navbar.module.css';
@@ -37,23 +37,35 @@ export function Navbar() {
           </Link>
 
           {!isLoading && !isAuthenticated && (
-            <Link href="/login" className={styles.link} onClick={() => setMenuOpen(false)}>
-              <LogIn size={14} />
-              <span>登录</span>
-            </Link>
+            <>
+              <Link href="/login" className={styles.link} onClick={() => setMenuOpen(false)}>
+                <LogIn size={14} />
+                <span>登录</span>
+              </Link>
+              <Link href="/register" className={styles.link} onClick={() => setMenuOpen(false)}>
+                <UserRound size={14} />
+                <span>注册</span>
+              </Link>
+            </>
           )}
 
           {!isLoading && isAuthenticated && (
             <>
-              <Link href="/admin" className={styles.link} onClick={() => setMenuOpen(false)}>
-                <LayoutDashboard size={14} />
-                <span>{user?.displayName || '控制台'}</span>
+              <Link href="/account" className={styles.link} onClick={() => setMenuOpen(false)}>
+                <UserRound size={14} />
+                <span>{user?.displayName || '个人中心'}</span>
               </Link>
+              {user?.role === 'admin' && (
+                <Link href="/admin" className={styles.link} onClick={() => setMenuOpen(false)}>
+                  <LayoutDashboard size={14} />
+                  <span>控制台</span>
+                </Link>
+              )}
               <button
                 type="button"
                 className={styles.ghostBtn}
-                onClick={() => {
-                  signOut();
+                onClick={async () => {
+                  await signOut();
                   setMenuOpen(false);
                   router.push('/login');
                 }}
