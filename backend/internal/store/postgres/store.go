@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"cybertoolkit/backend/internal/domain"
@@ -762,6 +763,67 @@ func (s *Store) FindUserByEmail(email string) (domain.User, bool) {
 		return domain.User{}, false
 	}
 	return publicUser(user), true
+}
+
+func (s *Store) UpdateUserProfile(userID string, displayName string) (domain.User, error) {
+	ctx := context.Background()
+	var user domain.User
+	err := s.pool.QueryRow(ctx,
+		`UPDATE users SET display_name = $1, updated_at = now() WHERE id = $2 AND is_active = true
+		 RETURNING id::text, email, display_name, role, created_at`,
+		displayName, userID,
+	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.CreatedAt)
+	if err != nil {
+		return domain.User{}, errors.New("user not found")
+	}
+	return publicUser(user), nil
+}
+
+func (s *Store) UpdateUserPassword(userID, currentPassword, newPassword string) error {
+	ctx := context.Background()
+	var hash string
+	err := s.pool.QueryRow(ctx,
+		`SELECT password_hash FROM users WHERE id = $1 AND is_active = true`,
+		userID,
+	).Scan(&hash)
+	if err != nil {
+		return errors.New("user not found")
+	}
+	if hash != hashPassword(currentPassword) {
+		return errors.New("current password is incorrect")
+	}
+	if hashPassword(newPassword) == hash {
+		return errors.New("new password must differ from current password")
+	}
+	_, err = s.pool.Exec(ctx,
+		`UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2`,
+		hashPassword(newPassword), userID,
+	)
+	if err != nil {
+		return errors.New("failed to update password")
+	}
+	return nil
+}
+
+func (s *Store) RevokeUserSessions(userID string, exceptToken string) (int, error) {
+	ctx := context.Background()
+	var (
+		tag pgconn.CommandTag
+		err error
+	)
+	if exceptToken == "" {
+		tag, err = s.pool.Exec(ctx,
+			`DELETE FROM sessions WHERE user_id = $1`, userID,
+		)
+	} else {
+		tag, err = s.pool.Exec(ctx,
+			`DELETE FROM sessions WHERE user_id = $1 AND access_token <> $2`, userID, exceptToken,
+		)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 func hashPassword(password string) string {

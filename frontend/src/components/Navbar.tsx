@@ -36,9 +36,13 @@ export function Navbar() {
 
           {isAuthenticated && user ? (
             <>
-              <span className={styles.link} style={{ cursor: 'default' }}>
+              <Link
+                href="/account"
+                className={styles.link}
+                onClick={() => setMenuOpen(false)}
+              >
                 <User size={14} /> {user.displayName}
-              </span>
+              </Link>
               <button className={styles.ghostBtn} onClick={handleSignOut}>
                 <LogOut size={14} /> 退出
               </button>

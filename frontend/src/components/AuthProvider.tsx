@@ -26,6 +26,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   signIn: (session: AuthSession) => void;
   signOut: () => Promise<void>;
+  updateUser: (user: AuthUser) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -39,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     async function bootstrap() {
-      let stored = loadStoredSession();
+      const stored = loadStoredSession();
       if (!stored) {
         if (!cancelled) {
           setIsLoading(false);
@@ -109,6 +110,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch {
           // Best-effort logout. Local session has already been cleared.
         }
+      },
+      updateUser: (nextUser) => {
+        const stored = loadStoredSession();
+        if (stored) {
+          storeSession({ ...stored, user: nextUser });
+        }
+        setUser(nextUser);
       },
     }),
     [isLoading, token, user]

@@ -25,4 +25,7 @@ type Store interface {
 	DeleteSession(token string)
 	RefreshSession(refreshToken string) (string, string, domain.User, error)
 	FindUserByEmail(email string) (domain.User, bool)
+	UpdateUserProfile(userID string, displayName string) (domain.User, error)
+	UpdateUserPassword(userID, currentPassword, newPassword string) error
+	RevokeUserSessions(userID string, exceptToken string) (int, error)
 }

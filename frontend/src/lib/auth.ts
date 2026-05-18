@@ -60,18 +60,24 @@ interface ApiError {
   };
 }
 
-async function postAuthJSON<T>(path: string, body: unknown, token?: string): Promise<T> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+async function requestAuthJSON<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  token?: string,
+): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
   const response = await fetch(`${getClientAPIBaseURL()}${path}`, {
-    method: 'POST',
+    method,
     headers,
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
 
   const payload = (await response.json()) as T | ApiError;
@@ -83,6 +89,10 @@ async function postAuthJSON<T>(path: string, body: unknown, token?: string): Pro
   }
 
   return payload as T;
+}
+
+async function postAuthJSON<T>(path: string, body: unknown, token?: string): Promise<T> {
+  return requestAuthJSON<T>('POST', path, body, token);
 }
 
 interface AuthResponse {
@@ -121,5 +131,50 @@ export async function me(token: string): Promise<AuthUser> {
 
 export async function refreshToken(refreshTokenValue: string): Promise<AuthSession> {
   const payload = await postAuthJSON<AuthResponse>('/api/v1/auth/refresh', { refreshToken: refreshTokenValue });
+  return payload.data;
+}
+
+export async function updateProfile(token: string, displayName: string): Promise<AuthUser> {
+  const payload = await requestAuthJSON<{ data: AuthUser }>(
+    'PATCH',
+    '/api/v1/auth/me',
+    { displayName },
+    token,
+  );
+  return payload.data;
+}
+
+interface ChangePasswordResult {
+  updated: boolean;
+  revokedSessions: number;
+}
+
+export async function changePassword(
+  token: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<ChangePasswordResult> {
+  const payload = await postAuthJSON<{ data: ChangePasswordResult }>(
+    '/api/v1/auth/password',
+    { currentPassword, newPassword },
+    token,
+  );
+  return payload.data;
+}
+
+interface RevokeSessionsResult {
+  revokedSessions: number;
+  keepCurrent: boolean;
+}
+
+export async function revokeOtherSessions(
+  token: string,
+  keepCurrent = true,
+): Promise<RevokeSessionsResult> {
+  const payload = await postAuthJSON<{ data: RevokeSessionsResult }>(
+    '/api/v1/auth/sessions/revoke',
+    { keepCurrent },
+    token,
+  );
   return payload.data;
 }

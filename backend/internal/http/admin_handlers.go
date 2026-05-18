@@ -98,11 +98,6 @@ func (api *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) handleMe(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
-		return
-	}
-
 	auth := r.Header.Get("Authorization")
 	token := strings.TrimPrefix(auth, "Bearer ")
 	user, ok := api.store.ValidateSession(token)
@@ -111,7 +106,35 @@ func (api *API) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, user, nil)
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, user, nil)
+	case http.MethodPatch:
+		var request struct {
+			DisplayName string `json:"displayName"`
+		}
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_JSON", "invalid request body", nil)
+			return
+		}
+		request.DisplayName = strings.TrimSpace(request.DisplayName)
+		if len(request.DisplayName) < 2 || len(request.DisplayName) > 32 {
+			writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "displayName must be between 2 and 32 characters", nil)
+			return
+		}
+		if request.DisplayName == user.DisplayName {
+			writeJSON(w, http.StatusOK, user, nil)
+			return
+		}
+		updated, err := api.store.UpdateUserProfile(user.ID, request.DisplayName)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "UPDATE_ERROR", err.Error(), nil)
+			return
+		}
+		writeJSON(w, http.StatusOK, updated, nil)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+	}
 }
 
 func (api *API) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -154,6 +177,86 @@ func (api *API) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		"accessToken":  accessToken,
 		"refreshToken": refreshToken,
 		"user":         user,
+	}, nil)
+}
+
+func (api *API) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+		return
+	}
+
+	auth := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(auth, "Bearer ")
+	user, ok := api.store.ValidateSession(token)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid token", nil)
+		return
+	}
+
+	var request struct {
+		CurrentPassword string `json:"currentPassword"`
+		NewPassword     string `json:"newPassword"`
+	}
+	if err := decodeJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_JSON", "invalid request body", nil)
+		return
+	}
+	if request.CurrentPassword == "" || request.NewPassword == "" {
+		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "currentPassword and newPassword are required", nil)
+		return
+	}
+	if !validatePassword(request.NewPassword) {
+		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "new password must be at least 6 characters", nil)
+		return
+	}
+
+	if err := api.store.UpdateUserPassword(user.ID, request.CurrentPassword, request.NewPassword); err != nil {
+		writeError(w, http.StatusBadRequest, "PASSWORD_ERROR", err.Error(), nil)
+		return
+	}
+
+	revoked, _ := api.store.RevokeUserSessions(user.ID, token)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"updated":          true,
+		"revokedSessions":  revoked,
+	}, nil)
+}
+
+func (api *API) handleRevokeSessions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+		return
+	}
+
+	auth := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(auth, "Bearer ")
+	user, ok := api.store.ValidateSession(token)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid token", nil)
+		return
+	}
+
+	var request struct {
+		KeepCurrent bool `json:"keepCurrent"`
+	}
+	_ = decodeJSON(r, &request)
+
+	exceptToken := ""
+	if request.KeepCurrent {
+		exceptToken = token
+	}
+
+	revoked, err := api.store.RevokeUserSessions(user.ID, exceptToken)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to revoke sessions", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"revokedSessions": revoked,
+		"keepCurrent":     request.KeepCurrent,
 	}, nil)
 }
 
