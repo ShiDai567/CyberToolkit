@@ -5,7 +5,7 @@ import (
 
 	"cybertoolkit/backend/internal/config"
 	httpapi "cybertoolkit/backend/internal/http"
-	"cybertoolkit/backend/internal/store/memory"
+	"cybertoolkit/backend/internal/store/postgres"
 )
 
 type Server struct {
@@ -15,7 +15,10 @@ type Server struct {
 
 func New() (*Server, error) {
 	cfg := config.Load()
-	store := memory.NewStore()
+	store, err := postgres.NewStore(cfg.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
 	handler := httpapi.NewRouter(cfg, store)
 
 	return &Server{

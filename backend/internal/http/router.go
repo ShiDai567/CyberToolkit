@@ -1,19 +1,21 @@
 package http
 
 import (
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"cybertoolkit/backend/internal/config"
-	"cybertoolkit/backend/internal/store/memory"
+	"cybertoolkit/backend/internal/store"
 )
 
 type API struct {
 	config config.Config
-	store  *memory.Store
+	store  store.Store
 }
 
-func NewRouter(cfg config.Config, store *memory.Store) http.Handler {
+func NewRouter(cfg config.Config, store store.Store) http.Handler {
 	api := &API{config: cfg, store: store}
 
 	mux := http.NewServeMux()
@@ -36,7 +38,16 @@ func NewRouter(cfg config.Config, store *memory.Store) http.Handler {
 	mux.HandleFunc("/api/v1/admin/tools", api.requireAdmin(api.handleAdminTools))
 	mux.HandleFunc("/api/v1/admin/tools/", api.requireAdmin(api.handleAdminToolByID))
 
-	return withCORS(withJSON(mux), cfg.CORSOrigins)
+	return withCORS(withJSON(withLogger(mux)), cfg.CORSOrigins)
+}
+
+func withLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		log.Printf("[%s] %s %s", r.Method, r.URL.Path, r.RemoteAddr)
+		next.ServeHTTP(w, r)
+		log.Printf("[%s] %s completed in %v", r.Method, r.URL.Path, time.Since(start))
+	})
 }
 
 func withJSON(next http.Handler) http.Handler {

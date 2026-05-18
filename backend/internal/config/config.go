@@ -11,6 +11,7 @@ type Config struct {
 	AdminEmail    string
 	AdminPassword string
 	CORSOrigins   []string
+	DatabaseURL   string
 }
 
 func Load() Config {
@@ -21,6 +22,7 @@ func Load() Config {
 		AdminEmail:    getenvCompat([]string{"ADMIN_EMAIL", "APP_ADMIN_EMAIL"}, "admin@cybertoolkit.local"),
 		AdminPassword: getenvCompat([]string{"ADMIN_PASSWORD", "APP_ADMIN_PASSWORD"}, "admin123456"),
 		CORSOrigins:   getCORSOrigins(),
+		DatabaseURL:   getenvCompat([]string{"DATABASE_URL"}, "postgres://postgres:postgres@localhost:5432/cybertoolkit?sslmode=disable"),
 	}
 }
 
