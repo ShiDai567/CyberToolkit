@@ -12,9 +12,11 @@ import {
   AuthSession,
   AuthUser,
   clearSession,
-  getClientAPIBaseURL,
   loadStoredSession,
   storeSession,
+  me,
+  refreshToken,
+  logout,
 } from '@/lib/auth';
 
 interface AuthContextValue {
@@ -37,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     async function bootstrap() {
-      const stored = loadStoredSession();
+      let stored = loadStoredSession();
       if (!stored) {
         if (!cancelled) {
           setIsLoading(false);
@@ -46,26 +48,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const response = await fetch(`${getClientAPIBaseURL()}/api/v1/auth/me`, {
-          headers: {
-            Authorization: `Bearer ${stored.accessToken}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error('session invalid');
-        }
-
-        const payload = (await response.json()) as { data: AuthUser };
+        const userData = await me(stored.accessToken);
         if (!cancelled) {
           setToken(stored.accessToken);
-          setUser(payload.data);
+          setUser(userData);
         }
       } catch {
-        clearSession();
-        if (!cancelled) {
-          setToken(null);
-          setUser(null);
+        // Try refresh
+        try {
+          const newSession = await refreshToken(stored.refreshToken);
+          storeSession(newSession);
+          if (!cancelled) {
+            setToken(newSession.accessToken);
+            setUser(newSession.user);
+          }
+        } catch {
+          clearSession();
+          if (!cancelled) {
+            setToken(null);
+            setUser(null);
+          }
         }
       } finally {
         if (!cancelled) {
@@ -103,12 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         try {
-          await fetch(`${getClientAPIBaseURL()}/api/v1/auth/logout`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${currentToken}`,
-            },
-          });
+          await logout(currentToken);
         } catch {
           // Best-effort logout. Local session has already been cleared.
         }

@@ -67,30 +67,39 @@ export function HeroSection() {
     };
   }, []);
 
+  const pauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     const currentText = TYPING_TEXTS[textIndex];
     const speed = isDeleting ? 30 : 70;
 
     const timer = setTimeout(() => {
       if (!isDeleting) {
-        setTypedText(currentText.substring(0, charIndex + 1));
-        setCharIndex((prev) => prev + 1);
+        const nextIndex = Math.min(currentText.length, charIndex + 1);
+        setTypedText(currentText.substring(0, nextIndex));
+        setCharIndex(nextIndex);
 
-        if (charIndex + 1 === currentText.length) {
-          setTimeout(() => setIsDeleting(true), 2000);
+        if (nextIndex === currentText.length) {
+          pauseTimerRef.current = setTimeout(() => setIsDeleting(true), 2000);
         }
       } else {
-        setTypedText(currentText.substring(0, charIndex - 1));
-        setCharIndex((prev) => prev - 1);
+        const nextIndex = Math.max(0, charIndex - 1);
+        setTypedText(currentText.substring(0, nextIndex));
+        setCharIndex(nextIndex);
 
-        if (charIndex === 0) {
+        if (nextIndex === 0) {
           setIsDeleting(false);
           setTextIndex((prev) => (prev + 1) % TYPING_TEXTS.length);
         }
       }
     }, speed);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (pauseTimerRef.current) {
+        clearTimeout(pauseTimerRef.current);
+      }
+    };
   }, [charIndex, isDeleting, textIndex]);
 
   return (
@@ -115,7 +124,7 @@ export function HeroSection() {
             <span className={styles.dot} style={{ background: '#EF4444' }} />
             <span className={styles.dot} style={{ background: '#F59E0B' }} />
             <span className={styles.dot} style={{ background: '#22C55E' }} />
-            <span className={styles.terminalTitle}>terminal</span>
+            <span className={styles.terminalTitle}>Terminal</span>
           </div>
           <div className={styles.terminalBody}>
             <span className={styles.prompt}>root@cyber:~$</span>

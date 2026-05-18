@@ -29,8 +29,11 @@ import {
   Wheat,
 } from 'lucide-react';
 import { ToolCard } from '@/components/ToolCard';
+import { Footer } from '@/components/Footer';
 import { getToolById, getTools } from '@/lib/api';
 import styles from './page.module.css';
+
+export const dynamic = 'force-dynamic';
 
 const iconMap: Record<string, React.ElementType> = {
   Radar,
@@ -96,12 +99,13 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ id:
   const diff = difficultyConfig[tool.difficulty];
 
   return (
-    <div className={styles.page}>
-      <div className={styles.container}>
-        <Link href="/tools" className={styles.backLink}>
-          <ArrowLeft size={16} />
-          <span>返回工具列表</span>
-        </Link>
+    <>
+      <div className={styles.page}>
+        <div className={styles.container}>
+          <Link href="/tools" className={styles.backLink}>
+            <ArrowLeft size={16} />
+            <span>返回工具列表</span>
+          </Link>
 
         <div className={styles.hero}>
           <div className={styles.heroIcon}>
@@ -201,6 +205,8 @@ export default async function ToolDetailPage({ params }: { params: Promise<{ id:
           </div>
         )}
       </div>
-    </div>
+      </div>
+      <Footer />
+    </>
   );
 }

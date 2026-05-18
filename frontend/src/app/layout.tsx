@@ -1,7 +1,6 @@
 ﻿import type { Metadata } from 'next';
 import './globals.css';
 import { Navbar } from '@/components/Navbar';
-import { Footer } from '@/components/Footer';
 import { AuthProvider } from '@/components/AuthProvider';
 
 export const metadata: Metadata = {
@@ -21,8 +20,7 @@ export default function RootLayout({
       <body className="scanline-overlay grid-bg">
         <AuthProvider>
           <Navbar />
-          <main style={{ minHeight: '100vh', paddingTop: '80px' }}>{children}</main>
-          <Footer />
+          <main style={{ paddingTop: '80px' }}>{children}</main>
         </AuthProvider>
       </body>
     </html>

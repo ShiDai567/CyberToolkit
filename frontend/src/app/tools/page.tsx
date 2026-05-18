@@ -1,5 +1,8 @@
 ﻿import { ToolsExplorer } from '@/components/ToolsExplorer';
+import { Footer } from '@/components/Footer';
 import { getCategories, getTools } from '@/lib/api';
+
+export const dynamic = 'force-dynamic';
 
 export default async function ToolsPage({
   searchParams,
@@ -12,5 +15,10 @@ export default async function ToolsPage({
     getCategories(),
   ]);
 
-  return <ToolsExplorer tools={tools} categories={categories} initialCategory={params.category || ''} />;
+  return (
+    <>
+      <ToolsExplorer tools={tools} categories={categories} initialCategory={params.category || ''} />
+      <Footer />
+    </>
+  );
 }

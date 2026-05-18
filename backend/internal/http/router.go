@@ -28,6 +28,7 @@ func NewRouter(cfg config.Config, store *memory.Store) http.Handler {
 	mux.HandleFunc("/api/v1/auth/register", api.handleRegister)
 	mux.HandleFunc("/api/v1/auth/me", api.requireAuth(api.handleMe))
 	mux.HandleFunc("/api/v1/auth/logout", api.requireAuth(api.handleLogout))
+	mux.HandleFunc("/api/v1/auth/refresh", api.handleRefresh)
 	mux.HandleFunc("/api/v1/admin/auth/login", api.handleLogin)
 	mux.HandleFunc("/api/v1/admin/me", api.requireAdmin(api.handleAdminMe))
 	mux.HandleFunc("/api/v1/admin/categories", api.requireAdmin(api.handleAdminCategories))
@@ -47,15 +48,21 @@ func withJSON(next http.Handler) http.Handler {
 
 func withCORS(next http.Handler, allowedOrigins []string) http.Handler {
 	allowed := make(map[string]struct{}, len(allowedOrigins))
+	allowAll := false
 	for _, origin := range allowedOrigins {
-		allowed[origin] = struct{}{}
+		if origin == "*" {
+			allowAll = true
+		} else {
+			allowed[origin] = struct{}{}
+		}
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		if origin != "" {
-			if _, ok := allowed["*"]; ok {
-				w.Header().Set("Access-Control-Allow-Origin", "*")
+			if allowAll {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
 			} else if _, ok := allowed[origin]; ok {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Vary", "Origin")
@@ -63,7 +70,8 @@ func withCORS(next http.Handler, allowedOrigins []string) http.Handler {
 		}
 
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Set("Access-Control-Max-Age", "600")
 
 		if r.Method == http.MethodOptions {

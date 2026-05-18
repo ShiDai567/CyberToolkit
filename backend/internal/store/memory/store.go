@@ -13,6 +13,12 @@ import (
 	"cybertoolkit/backend/internal/domain"
 )
 
+type sessionEntry struct {
+	user         domain.User
+	expiresAt    time.Time
+	refreshToken string
+}
+
 type Store struct {
 	mu           sync.RWMutex
 	categories   []domain.Category
@@ -21,7 +27,7 @@ type Store struct {
 	toolTags     []domain.ToolTag
 	submissions  []domain.Submission
 	users        []domain.User
-	sessions     map[string]domain.User
+	sessions     map[string]sessionEntry
 	nextCategory int
 	nextTag      int
 	nextTool     int
@@ -77,7 +83,7 @@ func NewStore() *Store {
 		toolTags:     toolTags,
 		submissions:  []domain.Submission{},
 		users:        users,
-		sessions:     make(map[string]domain.User),
+		sessions:     make(map[string]sessionEntry),
 		nextCategory: len(categories) + 1,
 		nextTag:      len(tags) + 1,
 		nextTool:     len(tools) + 1,
@@ -396,8 +402,13 @@ func (s *Store) Authenticate(email, password string) (string, string, domain.Use
 			if err != nil {
 				return "", "", domain.User{}, err
 			}
-			s.sessions[accessToken] = publicUser(user)
-			return accessToken, refreshToken, publicUser(user), nil
+			public := publicUser(user)
+			s.sessions[accessToken] = sessionEntry{
+				user:         public,
+				expiresAt:    time.Now().UTC().Add(24 * time.Hour),
+				refreshToken: refreshToken,
+			}
+			return accessToken, refreshToken, public, nil
 		}
 	}
 
@@ -435,16 +446,27 @@ func (s *Store) Register(email, password, displayName string) (string, string, d
 		return "", "", domain.User{}, err
 	}
 	public := publicUser(user)
-	s.sessions[accessToken] = public
+	s.sessions[accessToken] = sessionEntry{
+		user:         public,
+		expiresAt:    now.Add(24 * time.Hour),
+		refreshToken: refreshToken,
+	}
 	return accessToken, refreshToken, public, nil
 }
 
 func (s *Store) ValidateSession(token string) (domain.User, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	user, ok := s.sessions[token]
-	return user, ok
+	entry, ok := s.sessions[token]
+	if !ok {
+		return domain.User{}, false
+	}
+	if time.Now().UTC().After(entry.expiresAt) {
+		delete(s.sessions, token)
+		return domain.User{}, false
+	}
+	return entry.user, true
 }
 
 func (s *Store) DeleteSession(token string) {
@@ -452,6 +474,40 @@ func (s *Store) DeleteSession(token string) {
 	defer s.mu.Unlock()
 
 	delete(s.sessions, token)
+}
+
+func (s *Store) RefreshSession(refreshToken string) (string, string, domain.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for accessToken, entry := range s.sessions {
+		if entry.refreshToken != refreshToken {
+			continue
+		}
+		if time.Now().UTC().After(entry.expiresAt) {
+			delete(s.sessions, accessToken)
+			return "", "", domain.User{}, errors.New("session expired")
+		}
+
+		newAccessToken, err := randomToken()
+		if err != nil {
+			return "", "", domain.User{}, err
+		}
+		newRefreshToken, err := randomToken()
+		if err != nil {
+			return "", "", domain.User{}, err
+		}
+
+		delete(s.sessions, accessToken)
+		s.sessions[newAccessToken] = sessionEntry{
+			user:         entry.user,
+			expiresAt:    time.Now().UTC().Add(24 * time.Hour),
+			refreshToken: newRefreshToken,
+		}
+		return newAccessToken, newRefreshToken, entry.user, nil
+	}
+
+	return "", "", domain.User{}, errors.New("invalid refresh token")
 }
 
 func (s *Store) FindUserByEmail(email string) (domain.User, bool) {

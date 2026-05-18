@@ -142,7 +142,7 @@
 
 .asciiHeader {
   font-family: var(--font-heading);
-  font-size: 0.55rem;
+  font-size: 0.5rem;
   color: rgba(34, 197, 94, 0.35);
   line-height: 1.3;
   margin-bottom: 20px;
@@ -178,7 +178,7 @@
 .form {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }
 
 .field {
@@ -240,11 +240,6 @@
   box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.1), 0 0 15px rgba(34, 197, 94, 0.08);
 }
 
-.input:focus ~ .inputIcon,
-.input:focus + .inputIcon {
-  color: var(--color-cta);
-}
-
 .inputWrapper:focus-within .inputIcon {
   color: var(--color-cta);
 }
@@ -284,6 +279,14 @@
   80% { transform: translateX(3px); }
 }
 
+.passwordHint {
+  font-family: var(--font-body);
+  font-size: 0.65rem;
+  color: var(--color-text-dim);
+  margin-top: -10px;
+  opacity: 0.7;
+}
+
 .submitBtn {
   width: 100%;
   padding: 13px;
@@ -300,6 +303,7 @@
   box-shadow: 0 0 20px rgba(34, 197, 94, 0.25);
   position: relative;
   overflow: hidden;
+  margin-top: 4px;
 }
 
 .submitBtn:hover:not(:disabled) {

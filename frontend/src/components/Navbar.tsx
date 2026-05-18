@@ -1,16 +1,19 @@
-﻿'use client';
+'use client';
 
-import Link from 'next/link';
 import { useState } from 'react';
-import { Shield, Terminal, Menu, X, LogIn, LogOut, UserRound, LayoutDashboard } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { Shield, Home, Terminal, LogOut, Menu, X, User } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import styles from './Navbar.module.css';
 
 export function Navbar() {
+  const { user, isAuthenticated, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
-  const router = useRouter();
-  const { user, isLoading, isAuthenticated, signOut } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+    setMenuOpen(false);
+  };
 
   return (
     <nav className={styles.nav}>
@@ -19,60 +22,35 @@ export function Navbar() {
           <Shield className={styles.logoIcon} />
           <span className={styles.logoText}>
             Cyber<span className={styles.logoAccent}>Toolkit</span>
+            <span className={styles.cursor}>_</span>
           </span>
-          <span className={styles.cursor}>_</span>
         </Link>
 
         <div className={`${styles.links} ${menuOpen ? styles.linksOpen : ''}`}>
           <Link href="/" className={styles.link} onClick={() => setMenuOpen(false)}>
-            <Terminal size={14} />
-            <span>首页</span>
+            <Home size={14} /> 首页
           </Link>
           <Link href="/tools" className={styles.link} onClick={() => setMenuOpen(false)}>
-            <Terminal size={14} />
-            <span>工具库</span>
-          </Link>
-          <Link href="/tools" className={styles.ctaBtn} onClick={() => setMenuOpen(false)}>
-            探索工具
+            <Terminal size={14} /> 工具库
           </Link>
 
-          {!isLoading && !isAuthenticated && (
+          {isAuthenticated && user ? (
+            <>
+              <span className={styles.link} style={{ cursor: 'default' }}>
+                <User size={14} /> {user.displayName}
+              </span>
+              <button className={styles.ghostBtn} onClick={handleSignOut}>
+                <LogOut size={14} /> 退出
+              </button>
+            </>
+          ) : (
             <>
               <Link href="/login" className={styles.link} onClick={() => setMenuOpen(false)}>
-                <LogIn size={14} />
-                <span>登录</span>
+                登录
               </Link>
-              <Link href="/register" className={styles.link} onClick={() => setMenuOpen(false)}>
-                <UserRound size={14} />
-                <span>注册</span>
+              <Link href="/register" className={styles.ctaBtn} onClick={() => setMenuOpen(false)}>
+                注册
               </Link>
-            </>
-          )}
-
-          {!isLoading && isAuthenticated && (
-            <>
-              <Link href="/account" className={styles.link} onClick={() => setMenuOpen(false)}>
-                <UserRound size={14} />
-                <span>{user?.displayName || '个人中心'}</span>
-              </Link>
-              {user?.role === 'admin' && (
-                <Link href="/admin" className={styles.link} onClick={() => setMenuOpen(false)}>
-                  <LayoutDashboard size={14} />
-                  <span>控制台</span>
-                </Link>
-              )}
-              <button
-                type="button"
-                className={styles.ghostBtn}
-                onClick={async () => {
-                  await signOut();
-                  setMenuOpen(false);
-                  router.push('/login');
-                }}
-              >
-                <LogOut size={14} />
-                <span>退出</span>
-              </button>
             </>
           )}
         </div>
@@ -80,9 +58,9 @@ export function Navbar() {
         <button
           className={styles.menuBtn}
           onClick={() => setMenuOpen(!menuOpen)}
-          aria-label="Toggle menu"
+          aria-label={menuOpen ? '关闭菜单' : '打开菜单'}
         >
-          {menuOpen ? <X size={24} /> : <Menu size={24} />}
+          {menuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
       </div>
     </nav>

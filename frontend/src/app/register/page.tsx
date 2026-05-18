@@ -1,155 +1,257 @@
-﻿'use client';
+'use client';
 
+import { useEffect, useRef, useState, FormEvent } from 'react';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { UserPlus, Shield } from 'lucide-react';
+import { Mail, Lock, User, Shield, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
-import { getClientAPIBaseURL, type AuthSession } from '@/lib/auth';
-import loginStyles from '../login/page.module.css';
+import { register } from '@/lib/auth';
+import styles from './page.module.css';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { signIn, isAuthenticated, isLoading } = useAuth();
+  const { signIn, isAuthenticated } = useAuth();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<{ displayName?: string; email?: string; password?: string }>({});
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && isAuthenticated) {
-      router.replace('/account');
+    if (isAuthenticated) {
+      router.replace('/');
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, [isAuthenticated, router]);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const chars = '01アイウエオカキクケコ@#$%&*{}[]<>/\\|';
+    const fontSize = 14;
+    const columns = Math.floor(canvas.width / fontSize);
+    const drops: number[] = new Array(columns).fill(1).map(() => Math.random() * -50);
+
+    const draw = () => {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.06)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.font = `${fontSize}px "Fira Code", monospace`;
+
+      for (let i = 0; i < drops.length; i++) {
+        const brightness = Math.random();
+        if (brightness > 0.5) {
+          ctx.fillStyle = `rgba(34, 197, 94, ${0.08 + brightness * 0.12})`;
+        } else {
+          ctx.fillStyle = `rgba(34, 197, 94, 0.05)`;
+        }
+        const text = chars[Math.floor(Math.random() * chars.length)];
+        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+          drops[i] = 0;
+        }
+        drops[i]++;
+      }
+    };
+
+    const interval = setInterval(draw, 55);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('resize', resize);
+    };
+  }, []);
+
+  const validate = (): boolean => {
+    const errors: { displayName?: string; email?: string; password?: string } = {};
+    if (!displayName.trim()) {
+      errors.displayName = '请输入显示名称';
+    } else if (displayName.trim().length < 2) {
+      errors.displayName = '名称至少2个字符';
+    } else if (displayName.trim().length > 32) {
+      errors.displayName = '名称不超过32个字符';
+    }
+    if (!email.trim()) {
+      errors.email = '请输入邮箱地址';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.email = '邮箱格式不正确';
+    }
+    if (!password) {
+      errors.password = '请输入密码';
+    } else if (password.length < 6) {
+      errors.password = '密码至少6个字符';
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
     setError('');
 
-    if (password !== confirmPassword) {
-      setError('两次输入的密码不一致');
-      return;
-    }
+    if (!validate()) return;
 
-    setIsSubmitting(true);
+    setLoading(true);
     try {
-      const response = await fetch(`${getClientAPIBaseURL()}/api/v1/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password, displayName }),
-      });
-
-      const payload = (await response.json()) as
-        | { data: AuthSession }
-        | { error?: { message?: string } };
-
-      if (!response.ok || !('data' in payload)) {
-        throw new Error(payload.error?.message || '注册失败');
-      }
-
-      signIn(payload.data);
-      router.replace('/account');
-      router.refresh();
+      const session = await register(email, password, displayName.trim());
+      signIn(session);
+      router.replace('/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '注册失败');
+      const message = err instanceof Error ? err.message : '注册失败，请重试';
+      setError(message);
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <div className={loginStyles.page}>
-      <div className={loginStyles.card}>
-        <span className={loginStyles.eyebrow}>
-          <Shield size={14} />
-          Create Account
-        </span>
-        <h1 className={loginStyles.title}>
-          注册<span className="neon-text">账户</span>
-        </h1>
-        <p className={loginStyles.desc}>新用户默认注册为普通浏览角色，管理员和编辑角色由系统分配。</p>
+    <div className={styles.page}>
+      <canvas ref={canvasRef} className={styles.canvas} />
+      <div className={styles.overlay} />
 
-        <form className={loginStyles.form} onSubmit={handleSubmit}>
-          <div className={loginStyles.field}>
-            <label htmlFor="displayName" className={loginStyles.label}>
-              昵称
-            </label>
-            <input
-              id="displayName"
-              className={loginStyles.input}
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              autoComplete="nickname"
-              required
-            />
-          </div>
+      <div className={styles.card}>
+        <div className={styles.cardGlow} />
 
-          <div className={loginStyles.field}>
-            <label htmlFor="email" className={loginStyles.label}>
-              邮箱
-            </label>
-            <input
-              id="email"
-              className={loginStyles.input}
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
-            />
-          </div>
+        <div className={styles.terminalHeader}>
+          <span className={styles.dot} style={{ background: '#EF4444' }} />
+          <span className={styles.dot} style={{ background: '#F59E0B' }} />
+          <span className={styles.dot} style={{ background: '#22C55E' }} />
+          <span className={styles.terminalTitle}>AUTH_TERMINAL // REGISTER</span>
+          <span className={styles.terminalStatus}>
+            <span className={styles.statusDot} />
+            SECURE
+          </span>
+        </div>
 
-          <div className={loginStyles.field}>
-            <label htmlFor="password" className={loginStyles.label}>
-              密码
-            </label>
-            <input
-              id="password"
-              className={loginStyles.input}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-              required
-            />
-          </div>
+        <div className={styles.terminalBody}>
+          <pre className={styles.asciiHeader}>{`
+██████╗  ██████╗ ███████╗███╗   ██╗
+██╔══██╗██╔═══██╗██╔════╝████╗  ██║
+██████╔╝██║   ██║███████╗██╔██╗ ██║
+██╔══██╗██║   ██║╚════██║██║╚██╗██║
+██║  ██║╚██████╔╝███████║██║ ╚████║
+╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝`}</pre>
 
-          <div className={loginStyles.field}>
-            <label htmlFor="confirmPassword" className={loginStyles.label}>
-              确认密码
-            </label>
-            <input
-              id="confirmPassword"
-              className={loginStyles.input}
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              autoComplete="new-password"
-              required
-            />
-          </div>
+          <h1 className={styles.heading}>
+            身份<span className={styles.headingAccent}>注册</span>
+          </h1>
+          <p className={styles.subheading}>
+            创建新身份以获取安全工具库访问权限
+          </p>
 
-          {error && <div className={loginStyles.error}>{error}</div>}
+          {error && (
+            <div className={styles.globalError}>
+              <AlertCircle size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+              {error}
+            </div>
+          )}
 
-          <div className={loginStyles.actions}>
-            <button className={loginStyles.submit} type="submit" disabled={isSubmitting}>
-              <UserPlus size={16} />
-              {isSubmitting ? '注册中...' : '创建账户'}
+          <form className={styles.form} onSubmit={handleSubmit} noValidate>
+            <div className={styles.field}>
+              <label className={styles.label}>
+                <span className={styles.labelPrompt}>{'>'}</span> DISPLAY_NAME
+              </label>
+              <div className={styles.inputWrapper}>
+                <User className={styles.inputIcon} />
+                <input
+                  type="text"
+                  className={`${styles.input} ${fieldErrors.displayName ? styles.inputError : ''}`}
+                  placeholder="你的代号"
+                  value={displayName}
+                  onChange={(e) => { setDisplayName(e.target.value); setFieldErrors((f) => ({ ...f, displayName: undefined })); }}
+                  autoComplete="name"
+                  autoFocus
+                />
+              </div>
+              <span className={styles.errorMsg}>{fieldErrors.displayName}</span>
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label}>
+                <span className={styles.labelPrompt}>{'>'}</span> EMAIL
+              </label>
+              <div className={styles.inputWrapper}>
+                <Mail className={styles.inputIcon} />
+                <input
+                  type="email"
+                  className={`${styles.input} ${fieldErrors.email ? styles.inputError : ''}`}
+                  placeholder="user@example.com"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); setFieldErrors((f) => ({ ...f, email: undefined })); }}
+                  autoComplete="email"
+                />
+              </div>
+              <span className={styles.errorMsg}>{fieldErrors.email}</span>
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label}>
+                <span className={styles.labelPrompt}>{'>'}</span> PASSWORD
+              </label>
+              <div className={styles.inputWrapper}>
+                <Lock className={styles.inputIcon} />
+                <input
+                  type="password"
+                  className={`${styles.input} ${fieldErrors.password ? styles.inputError : ''}`}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setFieldErrors((f) => ({ ...f, password: undefined })); }}
+                  autoComplete="new-password"
+                />
+              </div>
+              <span className={styles.errorMsg}>{fieldErrors.password}</span>
+              {!fieldErrors.password && (
+                <span className={styles.passwordHint}>密码至少6个字符</span>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              className={styles.submitBtn}
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <span className={styles.spinner} />
+                  创建身份中...
+                </>
+              ) : (
+                '注册身份'
+              )}
             </button>
-          </div>
-        </form>
+          </form>
 
-        <p className={loginStyles.footer}>
-          已有账户？
-          <Link href="/login" className={loginStyles.footerLink}>
-            去登录
-          </Link>
-        </p>
+          <div className={styles.divider}>
+            <span className={styles.dividerLine} />
+            <span className={styles.dividerText}>OR</span>
+            <span className={styles.dividerLine} />
+          </div>
+
+          <p className={styles.footer}>
+            已有身份？{' '}
+            <Link href="/login" className={styles.footerLink}>
+              登录系统
+            </Link>
+          </p>
+
+          <div className={styles.secureNote}>
+            <Shield size={10} />
+            <span>ENCRYPTED CONNECTION // TLS 1.3</span>
+          </div>
+        </div>
       </div>
     </div>
   );

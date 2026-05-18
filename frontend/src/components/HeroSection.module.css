@@ -108,15 +108,23 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.terminalBody::-webkit-scrollbar {
+  display: none;
 }
 
 .prompt {
   color: var(--color-cta);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .typed {
   color: var(--color-text);
+  white-space: nowrap;
 }
 
 .blinkCursor {

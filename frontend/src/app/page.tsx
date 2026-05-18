@@ -2,10 +2,13 @@
 import { StatsBar } from '@/components/StatsBar';
 import { ToolCard } from '@/components/ToolCard';
 import { CategoryCard } from '@/components/CategoryCard';
+import { Footer } from '@/components/Footer';
 import { getHomeData } from '@/lib/api';
 import { ChevronRight, Terminal } from 'lucide-react';
 import Link from 'next/link';
 import styles from './page.module.css';
+
+export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
   const { stats, featuredTools, categories } = await getHomeData();
@@ -95,6 +98,8 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+
+      <Footer />
     </>
   );
 }

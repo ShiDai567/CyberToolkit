@@ -2,10 +2,20 @@ package http
 
 import (
 	"net/http"
+	"net/mail"
 	"strings"
 
 	"cybertoolkit/backend/internal/domain"
 )
+
+func validateEmail(email string) bool {
+	addr, err := mail.ParseAddress(email)
+	return err == nil && addr.Address == email
+}
+
+func validatePassword(password string) bool {
+	return len(password) >= 6
+}
 
 func (api *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -19,6 +29,11 @@ func (api *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decodeJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_JSON", "invalid request body", nil)
+		return
+	}
+	request.Email = strings.TrimSpace(request.Email)
+	if request.Email == "" || request.Password == "" {
+		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "email and password are required", nil)
 		return
 	}
 
@@ -50,8 +65,22 @@ func (api *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_JSON", "invalid request body", nil)
 		return
 	}
+	request.Email = strings.TrimSpace(request.Email)
+	request.DisplayName = strings.TrimSpace(request.DisplayName)
 	if request.Email == "" || request.Password == "" || request.DisplayName == "" {
 		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "email, password and displayName are required", nil)
+		return
+	}
+	if !validateEmail(request.Email) {
+		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "invalid email format", nil)
+		return
+	}
+	if !validatePassword(request.Password) {
+		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "password must be at least 6 characters", nil)
+		return
+	}
+	if len(request.DisplayName) < 2 || len(request.DisplayName) > 32 {
+		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "displayName must be between 2 and 32 characters", nil)
 		return
 	}
 
@@ -95,6 +124,37 @@ func (api *API) handleLogout(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(auth, "Bearer ")
 	api.store.DeleteSession(token)
 	writeJSON(w, http.StatusOK, map[string]bool{"loggedOut": true}, nil)
+}
+
+func (api *API) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+		return
+	}
+
+	var request struct {
+		RefreshToken string `json:"refreshToken"`
+	}
+	if err := decodeJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_JSON", "invalid request body", nil)
+		return
+	}
+	if request.RefreshToken == "" {
+		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "refreshToken is required", nil)
+		return
+	}
+
+	accessToken, refreshToken, user, err := api.store.RefreshSession(request.RefreshToken)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "INVALID_REFRESH_TOKEN", err.Error(), nil)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"accessToken":  accessToken,
+		"refreshToken": refreshToken,
+		"user":         user,
+	}, nil)
 }
 
 func (api *API) handleAdminMe(w http.ResponseWriter, r *http.Request) {
