@@ -5,14 +5,16 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
 	Addr             string
+	AdminUsername    string
 	AdminEmail       string
 	AdminPassword    string
-	AdminDisplayName string
+	AdminName        string
 	CORSOrigins      []string
 	DatabaseURL      string
 	RedisURL         string
@@ -54,6 +56,9 @@ type yamlConfig struct {
 const configPath = "data/config.yaml"
 
 func Load() Config {
+	// Load .env file if it exists (silently ignore if not found)
+	_ = godotenv.Load()
+
 	yc := loadOrCreate(configPath)
 
 	addr := fmt.Sprintf(":%d", yc.Server.Port)
@@ -80,9 +85,10 @@ func Load() Config {
 
 	return Config{
 		Addr:             addr,
+		AdminUsername:    getenv("ADMIN_USER", "admin"),
 		AdminEmail:       getenv("ADMIN_EMAIL", "admin@cybertoolkit.local"),
 		AdminPassword:    getenv("ADMIN_PASSWORD", "admin123456"),
-		AdminDisplayName: getenv("ADMIN_USER", "Admin"),
+		AdminName:        getenv("ADMIN_NAME", "Admin"),
 		CORSOrigins:      yc.CORS.AllowedOrigins,
 		DatabaseURL:      dbURL,
 		RedisURL:         redisURL,

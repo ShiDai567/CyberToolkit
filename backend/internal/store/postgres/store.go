@@ -19,14 +19,15 @@ import (
 )
 
 type Store struct {
-	pool             *pgxpool.Pool
-	redis            *redis.Client
-	adminEmail       string
-	adminPassword    string
-	adminDisplayName string
+	pool          *pgxpool.Pool
+	redis         *redis.Client
+	adminUsername string
+	adminEmail    string
+	adminPassword string
+	adminName     string
 }
 
-func NewStore(databaseURL, redisURL, adminEmail, adminPassword, adminDisplayName string) (*Store, error) {
+func NewStore(databaseURL, redisURL, adminUsername, adminEmail, adminPassword, adminName string) (*Store, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -49,11 +50,12 @@ func NewStore(databaseURL, redisURL, adminEmail, adminPassword, adminDisplayName
 	}
 
 	s := &Store{
-		pool:             pool,
-		redis:            rdb,
-		adminEmail:       adminEmail,
-		adminPassword:    adminPassword,
-		adminDisplayName: adminDisplayName,
+		pool:          pool,
+		redis:         rdb,
+		adminUsername: adminUsername,
+		adminEmail:    adminEmail,
+		adminPassword: adminPassword,
+		adminName:     adminName,
 	}
 
 	if err := s.migrate(ctx); err != nil {
@@ -72,26 +74,25 @@ func NewStore(databaseURL, redisURL, adminEmail, adminPassword, adminDisplayName
 }
 
 // ensureAdmin guarantees the admin user configured via env vars exists with
-// the configured password and admin role on every startup. This avoids the
-// previous behaviour where the admin was only created during the initial
-// empty-database seed and could not be changed by editing .env later.
+// the configured username, email, password and name on every startup.
 func (s *Store) ensureAdmin(ctx context.Context) error {
-	email := strings.TrimSpace(s.adminEmail)
+	username := strings.TrimSpace(s.adminUsername)
 	password := s.adminPassword
-	if email == "" || password == "" {
+	if username == "" || password == "" {
 		return nil
 	}
 
-	displayName := strings.TrimSpace(s.adminDisplayName)
-	if displayName == "" {
-		displayName = "Admin"
+	email := strings.TrimSpace(s.adminEmail)
+	name := strings.TrimSpace(s.adminName)
+	if name == "" {
+		name = "Admin"
 	}
 
 	now := time.Now().UTC()
 	tag, err := s.pool.Exec(ctx,
-		`UPDATE users SET password_hash = $1, display_name = $2, role = 'admin', is_active = true, updated_at = $3
-		 WHERE email = $4`,
-		hashPassword(password), displayName, now, email,
+		`UPDATE users SET email = $1, password_hash = $2, display_name = $3, role = 'admin', is_active = true, updated_at = $4
+		 WHERE username = $5`,
+		email, hashPassword(password), name, now, username,
 	)
 	if err != nil {
 		return err
@@ -100,16 +101,10 @@ func (s *Store) ensureAdmin(ctx context.Context) error {
 		return nil
 	}
 
-	// Derive username from email (part before @)
-	adminUsername := email
-	if idx := strings.Index(email, "@"); idx > 0 {
-		adminUsername = email[:idx]
-	}
-
 	_, err = s.pool.Exec(ctx,
 		`INSERT INTO users (username, email, password_hash, display_name, role, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, 'admin', $5, $5)`,
-		adminUsername, email, hashPassword(password), displayName, now,
+		username, email, hashPassword(password), name, now,
 	)
 	return err
 }
@@ -216,6 +211,7 @@ func (s *Store) seed(ctx context.Context) error {
 		DisplayName string
 		Role        string
 	}{
+		{Username: s.adminUsername, Email: s.adminEmail, Password: s.adminPassword, DisplayName: s.adminName, Role: "admin"},
 		{Username: "editor", Email: "editor@cybertoolkit.local", Password: "editor123456", DisplayName: "Editor Demo", Role: "editor"},
 		{Username: "viewer", Email: "viewer@cybertoolkit.local", Password: "viewer123456", DisplayName: "Viewer Demo", Role: "viewer"},
 	}
