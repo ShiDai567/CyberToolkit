@@ -1,6 +1,9 @@
 .env
 .env.local
 
+# Auto-generated config and runtime data
+data/
+
 bin/
 dist/
 build/
