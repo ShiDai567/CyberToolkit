@@ -1,87 +1,141 @@
-﻿'use client';
+'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import {
+  Wrench,
+  FolderTree,
+  Users,
+  Inbox,
+} from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
+import { getAdminStats, type AdminStats } from '@/lib/admin';
 import styles from './page.module.css';
 
-export default function AdminPage() {
-  const router = useRouter();
-  const { user, isLoading, isAuthenticated, signOut } = useAuth();
+const STAT_CARDS = [
+  {
+    key: 'toolCount' as const,
+    label: '工具总数',
+    icon: Wrench,
+    sub: (s: AdminStats) => `已发布 ${s.publishedToolCount} / 草稿 ${s.draftToolCount}`,
+  },
+  {
+    key: 'categoryCount' as const,
+    label: '分类数',
+    icon: FolderTree,
+    sub: () => '工具分类总数',
+  },
+  {
+    key: 'userCount' as const,
+    label: '用户数',
+    icon: Users,
+    sub: (s: AdminStats) => `活跃用户 ${s.activeUserCount}`,
+  },
+  {
+    key: 'pendingSubmissionCount' as const,
+    label: '待审核投稿',
+    icon: Inbox,
+    sub: (s: AdminStats) => `共 ${s.submissionCount} 条投稿`,
+  },
+];
 
-  if (isLoading) {
-    return (
-      <div className={styles.empty}>
-        <div className={styles.emptyCard}>正在验证登录状态...</div>
-      </div>
-    );
-  }
+const QUICK_ACTIONS = [
+  { href: '/admin/tools', label: '管理工具', icon: Wrench },
+  { href: '/admin/categories', label: '管理分类', icon: FolderTree },
+  { href: '/admin/users', label: '管理用户', icon: Users },
+  { href: '/admin/submissions', label: '审核投稿', icon: Inbox },
+];
 
-  if (!isAuthenticated || !user) {
-    return (
-      <div className={styles.empty}>
-        <div className={styles.emptyCard}>
-          <h1>未登录</h1>
-          <p className={styles.emptyText}>需要先登录管理员账户才能访问控制台。</p>
-          <Link href="/login?redirect=/admin" className={styles.loginLink}>
-            前往登录
-          </Link>
-        </div>
-      </div>
-    );
-  }
+export default function AdminDashboardPage() {
+  const { token } = useAuth();
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  if (user.role !== 'admin') {
-    return (
-      <div className={styles.empty}>
-        <div className={styles.emptyCard}>
-          <h1>权限不足</h1>
-          <p className={styles.emptyText}>当前账户已登录，但不具备管理员权限。</p>
-          <Link href="/account" className={styles.loginLink}>
-            返回个人中心
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!token) return;
+
+    let cancelled = false;
+
+    async function fetchStats() {
+      try {
+        const data = await getAdminStats(token!);
+        if (!cancelled) {
+          setStats(data);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : '获取统计数据失败');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void fetchStats();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   return (
-    <div className={styles.page}>
-      <div className={styles.container}>
-        <div className={styles.header}>
-          <div>
-            <h1 className={styles.title}>
-              管理<span className="neon-text">控制台</span>
-            </h1>
-            <p className={styles.desc}>当前页面用于确认管理员登录链路和后台权限入口已经可用。</p>
-          </div>
-          <button
-            className={styles.logout}
-            onClick={async () => {
-              await signOut();
-              router.replace('/login');
-            }}
-            type="button"
-          >
-            退出登录
-          </button>
-        </div>
-
-        <div className={styles.grid}>
-          <div className={styles.card}>
-            <div className={styles.cardTitle}>当前用户</div>
-            <div className={styles.cardValue}>{user.displayName}</div>
-          </div>
-          <div className={styles.card}>
-            <div className={styles.cardTitle}>邮箱</div>
-            <div className={styles.cardValue}>{user.email}</div>
-          </div>
-          <div className={styles.card}>
-            <div className={styles.cardTitle}>角色</div>
-            <div className={styles.cardValue}>{user.role}</div>
-          </div>
-        </div>
+    <div>
+      {/* Terminal header */}
+      <div className={styles.header}>
+        <h1 className={styles.headerPrompt}>
+          <span className={styles.headerPromptChar}>&gt; </span>
+          DASHBOARD // OVERVIEW
+        </h1>
+        <p className={styles.headerDesc}>系统运行状态总览</p>
       </div>
+
+      {/* Error */}
+      {error && <div className={styles.errorMsg}>&gt; ERROR: {error}</div>}
+
+      {/* Loading skeleton */}
+      {loading && (
+        <div className={styles.skeleton}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className={styles.skeletonCard} />
+          ))}
+        </div>
+      )}
+
+      {/* Stats grid */}
+      {!loading && stats && (
+        <div className={styles.grid}>
+          {STAT_CARDS.map(({ key, label, icon: Icon, sub }) => (
+            <div key={key} className={styles.card}>
+              <Icon size={24} className={styles.cardIcon} />
+              <div className={styles.cardValue}>{stats[key]}</div>
+              <div className={styles.cardLabel}>{label}</div>
+              <div className={styles.cardSub}>{sub(stats)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Quick actions */}
+      {!loading && stats && (
+        <>
+          <div className={styles.quickActionsHeader}>
+            <span className={styles.headerPromptChar}>&gt; </span>
+            QUICK_ACTIONS // 快捷操作
+          </div>
+          <div className={styles.quickActions}>
+            {QUICK_ACTIONS.map(({ href, label, icon: Icon }) => (
+              <Link key={href} href={href} className={styles.quickAction}>
+                <Icon size={18} className={styles.quickActionIcon} />
+                <span>{label}</span>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

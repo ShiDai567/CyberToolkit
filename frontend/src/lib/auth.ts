@@ -80,7 +80,13 @@ async function requestAuthJSON<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
-  const payload = (await response.json()) as T | ApiError;
+  const text = await response.text();
+  let payload: T | ApiError;
+  try {
+    payload = JSON.parse(text) as T | ApiError;
+  } catch {
+    throw new Error(`Request failed: ${response.status}`);
+  }
 
   if (!response.ok) {
     const errorPayload = payload as ApiError;
@@ -120,7 +126,14 @@ export async function me(token: string): Promise<AuthUser> {
     },
   });
 
-  const payload = (await response.json()) as { data: AuthUser } | ApiError;
+  const text = await response.text();
+  let payload: { data: AuthUser } | ApiError;
+  try {
+    payload = JSON.parse(text) as { data: AuthUser } | ApiError;
+  } catch {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+
   if (!response.ok) {
     const errorPayload = payload as ApiError;
     throw new Error(errorPayload.error?.message || `Request failed: ${response.status}`);

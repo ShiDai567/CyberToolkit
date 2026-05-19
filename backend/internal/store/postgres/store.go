@@ -654,9 +654,9 @@ func (s *Store) Authenticate(email, password string) (string, string, domain.Use
 	ctx := context.Background()
 	var user domain.User
 	err := s.pool.QueryRow(ctx,
-		`SELECT id::text, email, display_name, password_hash, role, created_at FROM users WHERE email = $1 AND is_active = true`,
+		`SELECT id::text, email, display_name, password_hash, role, is_active, last_login_at, created_at FROM users WHERE email = $1 AND is_active = true`,
 		email,
-	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.PasswordHash, &user.Role, &user.CreatedAt)
+	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.PasswordHash, &user.Role, &user.IsActive, &user.LastLoginAt, &user.CreatedAt)
 	if err != nil {
 		return "", "", domain.User{}, errors.New("invalid email or password")
 	}
@@ -673,8 +673,12 @@ func (s *Store) Authenticate(email, password string) (string, string, domain.Use
 		return "", "", domain.User{}, err
 	}
 
+	now := time.Now().UTC()
 	public := publicUser(user)
-	expiresAt := time.Now().UTC().Add(24 * time.Hour)
+	expiresAt := now.Add(24 * time.Hour)
+	_, _ = s.pool.Exec(ctx,
+		`UPDATE users SET last_login_at = $1 WHERE id = $2`, now, user.ID,
+	)
 	_, _ = s.pool.Exec(ctx,
 		`INSERT INTO sessions (access_token, user_id, refresh_token, expires_at) VALUES ($1, $2, $3, $4)`,
 		accessToken, user.ID, refreshToken, expiresAt,
@@ -707,6 +711,7 @@ func (s *Store) Register(email, password, displayName string) (string, string, d
 		Email:       email,
 		DisplayName: displayName,
 		Role:        "viewer",
+		IsActive:    true,
 		CreatedAt:   now,
 	}
 
@@ -735,9 +740,9 @@ func (s *Store) ValidateSession(token string) (domain.User, bool) {
 
 	var user domain.User
 	err := s.pool.QueryRow(ctx,
-		`SELECT u.id::text, u.email, u.display_name, u.role, u.created_at FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.access_token = $1 AND s.expires_at > now()`,
+		`SELECT u.id::text, u.email, u.display_name, u.role, u.is_active, u.created_at FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.access_token = $1 AND s.expires_at > now()`,
 		token,
-	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.CreatedAt)
+	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
 	if err != nil {
 		return domain.User{}, false
 	}
@@ -756,9 +761,9 @@ func (s *Store) RefreshSession(refreshToken string) (string, string, domain.User
 
 	var user domain.User
 	err := s.pool.QueryRow(ctx,
-		`SELECT u.id::text, u.email, u.display_name, u.role, u.created_at FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.refresh_token = $1 AND s.expires_at > now()`,
+		`SELECT u.id::text, u.email, u.display_name, u.role, u.is_active, u.created_at FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.refresh_token = $1 AND s.expires_at > now()`,
 		refreshToken,
-	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.CreatedAt)
+	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
 	if err != nil {
 		return "", "", domain.User{}, errors.New("invalid refresh token")
 	}
@@ -804,9 +809,9 @@ func (s *Store) FindUserByEmail(email string) (domain.User, bool) {
 	ctx := context.Background()
 	var user domain.User
 	err := s.pool.QueryRow(ctx,
-		`SELECT id::text, email, display_name, role, created_at FROM users WHERE email = $1`,
+		`SELECT id::text, email, display_name, role, is_active, created_at FROM users WHERE email = $1`,
 		email,
-	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.CreatedAt)
+	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
 	if err != nil {
 		return domain.User{}, false
 	}
@@ -818,9 +823,9 @@ func (s *Store) UpdateUserProfile(userID string, displayName string) (domain.Use
 	var user domain.User
 	err := s.pool.QueryRow(ctx,
 		`UPDATE users SET display_name = $1, updated_at = now() WHERE id = $2 AND is_active = true
-		 RETURNING id::text, email, display_name, role, created_at`,
+		 RETURNING id::text, email, display_name, role, is_active, created_at`,
 		displayName, userID,
-	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.CreatedAt)
+	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
 	if err != nil {
 		return domain.User{}, errors.New("user not found")
 	}
@@ -916,4 +921,214 @@ func slugify(input string) string {
 	input = strings.ReplaceAll(input, "/", "-")
 	input = strings.ReplaceAll(input, "_", "-")
 	return input
+}
+
+// ── Admin: user management ──
+
+func (s *Store) ListUsers(page, pageSize int) ([]domain.User, int) {
+	ctx := context.Background()
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	var total int
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&total)
+
+	offset := (page - 1) * pageSize
+	rows, err := s.pool.Query(ctx,
+		`SELECT id::text, email, display_name, role, is_active, last_login_at, created_at FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+		pageSize, offset,
+	)
+	if err != nil {
+		return nil, total
+	}
+	defer rows.Close()
+
+	var out []domain.User
+	for rows.Next() {
+		var u domain.User
+		if err := rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt); err != nil {
+			continue
+		}
+		out = append(out, publicUser(u))
+	}
+	return out, total
+}
+
+func (s *Store) UpdateUserRole(userID, role string) (domain.User, error) {
+	ctx := context.Background()
+	var user domain.User
+	err := s.pool.QueryRow(ctx,
+		`UPDATE users SET role = $1, updated_at = now() WHERE id = $2
+		 RETURNING id::text, email, display_name, role, is_active, created_at`,
+		role, userID,
+	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
+	if err != nil {
+		return domain.User{}, errors.New("user not found")
+	}
+	return publicUser(user), nil
+}
+
+func (s *Store) SetUserActive(userID string, active bool) error {
+	ctx := context.Background()
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE users SET is_active = $1, updated_at = now() WHERE id = $2`,
+		active, userID,
+	)
+	if err != nil || tag.RowsAffected() == 0 {
+		return errors.New("user not found")
+	}
+	if !active {
+		_, _ = s.pool.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID)
+	}
+	return nil
+}
+
+// ── Admin: submission management ──
+
+func (s *Store) ListSubmissions(status string, page, pageSize int) ([]domain.Submission, int) {
+	ctx := context.Background()
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	where := "1=1"
+	args := []any{}
+	if status != "" {
+		where = "status = $1"
+		args = append(args, status)
+	}
+
+	var total int
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM tool_submissions WHERE `+where, args...).Scan(&total)
+
+	offset := (page - 1) * pageSize
+	argIdx := len(args) + 1
+	query := fmt.Sprintf(`SELECT id::text, type, COALESCE(submitted_by::text, ''), COALESCE(tool_id::text, ''), COALESCE(submitter_email, ''), payload, status, COALESCE(reviewer_id::text, ''), COALESCE(review_note, ''), created_at, reviewed_at FROM tool_submissions WHERE %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, where, argIdx, argIdx+1)
+	args = append(args, pageSize, offset)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, total
+	}
+	defer rows.Close()
+
+	var out []domain.Submission
+	for rows.Next() {
+		var sub domain.Submission
+		if err := rows.Scan(&sub.ID, &sub.Type, &sub.SubmittedBy, &sub.ToolID, &sub.SubmitterEmail, &sub.Payload, &sub.Status, &sub.ReviewerID, &sub.ReviewNote, &sub.CreatedAt, &sub.ReviewedAt); err != nil {
+			continue
+		}
+		out = append(out, sub)
+	}
+	return out, total
+}
+
+func (s *Store) ReviewSubmission(id, reviewerID, status, note string) (domain.Submission, error) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	var sub domain.Submission
+	err := s.pool.QueryRow(ctx,
+		`UPDATE tool_submissions SET status = $1, reviewer_id = $2, review_note = $3, reviewed_at = $4
+		 WHERE id = $5
+		 RETURNING id::text, type, COALESCE(submitted_by::text, ''), COALESCE(tool_id::text, ''), COALESCE(submitter_email, ''), payload, status, COALESCE(reviewer_id::text, ''), COALESCE(review_note, ''), created_at, reviewed_at`,
+		status, reviewerID, note, now, id,
+	).Scan(&sub.ID, &sub.Type, &sub.SubmittedBy, &sub.ToolID, &sub.SubmitterEmail, &sub.Payload, &sub.Status, &sub.ReviewerID, &sub.ReviewNote, &sub.CreatedAt, &sub.ReviewedAt)
+	if err != nil {
+		return domain.Submission{}, errors.New("submission not found")
+	}
+	return sub, nil
+}
+
+// ── Admin: dashboard stats ──
+
+func (s *Store) AdminStats() map[string]int {
+	ctx := context.Background()
+	var toolCount, publishedToolCount, draftToolCount, categoryCount, userCount, activeUserCount, pendingSubmissionCount, submissionCount int
+
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM tools`).Scan(&toolCount)
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM tools WHERE status = 'published'`).Scan(&publishedToolCount)
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM tools WHERE status = 'draft'`).Scan(&draftToolCount)
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM categories`).Scan(&categoryCount)
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&userCount)
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE is_active = true`).Scan(&activeUserCount)
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM tool_submissions WHERE status = 'pending'`).Scan(&pendingSubmissionCount)
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM tool_submissions`).Scan(&submissionCount)
+
+	return map[string]int{
+		"toolCount":              toolCount,
+		"publishedToolCount":     publishedToolCount,
+		"draftToolCount":         draftToolCount,
+		"categoryCount":          categoryCount,
+		"userCount":              userCount,
+		"activeUserCount":        activeUserCount,
+		"pendingSubmissionCount": pendingSubmissionCount,
+		"submissionCount":        submissionCount,
+	}
+}
+
+// ── Admin: audit logs ──
+
+func (s *Store) ListAuditLogs(page, pageSize int) ([]domain.AuditLog, int) {
+	ctx := context.Background()
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	var total int
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM audit_logs`).Scan(&total)
+
+	offset := (page - 1) * pageSize
+	rows, err := s.pool.Query(ctx,
+		`SELECT id::text, COALESCE(user_id::text, ''), action, resource_type, COALESCE(resource_id::text, ''), before_data, after_data, created_at FROM audit_logs ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+		pageSize, offset,
+	)
+	if err != nil {
+		return nil, total
+	}
+	defer rows.Close()
+
+	var out []domain.AuditLog
+	for rows.Next() {
+		var log domain.AuditLog
+		if err := rows.Scan(&log.ID, &log.UserID, &log.Action, &log.ResourceType, &log.ResourceID, &log.BeforeData, &log.AfterData, &log.CreatedAt); err != nil {
+			continue
+		}
+		out = append(out, log)
+	}
+	return out, total
+}
+
+func (s *Store) CreateAuditLog(log domain.AuditLog) {
+	ctx := context.Background()
+	_, _ = s.pool.Exec(ctx,
+		`INSERT INTO audit_logs (user_id, action, resource_type, resource_id, before_data, after_data, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		nilIfEmpty(log.UserID), log.Action, log.ResourceType, nilIfEmpty(log.ResourceID), log.BeforeData, log.AfterData, time.Now().UTC(),
+	)
+}
+
+func nilIfEmpty(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
 }

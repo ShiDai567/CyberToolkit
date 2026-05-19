@@ -533,6 +533,161 @@ func (api *API) handleAdminToolByID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (api *API) handleAdminStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, api.store.AdminStats(), nil)
+}
+
+func (api *API) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+		return
+	}
+
+	page := parseIntDefault(r.URL.Query().Get("page"), 1)
+	pageSize := parseIntDefault(r.URL.Query().Get("pageSize"), 20)
+	users, total := api.store.ListUsers(page, pageSize)
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	writeJSON(w, http.StatusOK, users, meta{
+		"page":       max(page, 1),
+		"pageSize":   pageSize,
+		"total":      total,
+		"totalPages": (total + pageSize - 1) / pageSize,
+	})
+}
+
+func (api *API) handleAdminUserByID(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/admin/users/")
+	if id == "" {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "user not found", nil)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPatch:
+		var request struct {
+			Role string `json:"role"`
+		}
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_JSON", "invalid request body", nil)
+			return
+		}
+		if request.Role != "admin" && request.Role != "editor" && request.Role != "viewer" {
+			writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "role must be admin, editor or viewer", nil)
+			return
+		}
+		user, err := api.store.UpdateUserRole(id, request.Role)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error(), nil)
+			return
+		}
+		writeJSON(w, http.StatusOK, user, nil)
+	case http.MethodDelete:
+		var request struct {
+			Active *bool `json:"active"`
+		}
+		_ = decodeJSON(r, &request)
+		active := false
+		if request.Active != nil {
+			active = *request.Active
+		}
+		if err := api.store.SetUserActive(id, active); err != nil {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error(), nil)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"active": active}, nil)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+	}
+}
+
+func (api *API) handleAdminSubmissions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+		return
+	}
+
+	status := r.URL.Query().Get("status")
+	page := parseIntDefault(r.URL.Query().Get("page"), 1)
+	pageSize := parseIntDefault(r.URL.Query().Get("pageSize"), 20)
+	submissions, total := api.store.ListSubmissions(status, page, pageSize)
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	writeJSON(w, http.StatusOK, submissions, meta{
+		"page":       max(page, 1),
+		"pageSize":   pageSize,
+		"total":      total,
+		"totalPages": (total + pageSize - 1) / pageSize,
+	})
+}
+
+func (api *API) handleAdminSubmissionByID(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/admin/submissions/")
+	if id == "" {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "submission not found", nil)
+		return
+	}
+
+	if r.Method != http.MethodPatch {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+		return
+	}
+
+	auth := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(auth, "Bearer ")
+	user, ok := api.store.ValidateSession(token)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid token", nil)
+		return
+	}
+
+	var request struct {
+		Status string `json:"status"`
+		Note   string `json:"note"`
+	}
+	if err := decodeJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_JSON", "invalid request body", nil)
+		return
+	}
+	if request.Status != "approved" && request.Status != "rejected" {
+		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "status must be approved or rejected", nil)
+		return
+	}
+
+	submission, err := api.store.ReviewSubmission(id, user.ID, request.Status, request.Note)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error(), nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, submission, nil)
+}
+
+func (api *API) handleAdminAuditLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+		return
+	}
+
+	page := parseIntDefault(r.URL.Query().Get("page"), 1)
+	pageSize := parseIntDefault(r.URL.Query().Get("pageSize"), 20)
+	logs, total := api.store.ListAuditLogs(page, pageSize)
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	writeJSON(w, http.StatusOK, logs, meta{
+		"page":       max(page, 1),
+		"pageSize":   pageSize,
+		"total":      total,
+		"totalPages": (total + pageSize - 1) / pageSize,
+	})
+}
+
 func max(a, b int) int {
 	if a > b {
 		return a

@@ -28,4 +28,20 @@ type Store interface {
 	UpdateUserProfile(userID string, displayName string) (domain.User, error)
 	UpdateUserPassword(userID, currentPassword, newPassword string) error
 	RevokeUserSessions(userID string, exceptToken string) (int, error)
+
+	// Admin: user management
+	ListUsers(page, pageSize int) ([]domain.User, int)
+	UpdateUserRole(userID, role string) (domain.User, error)
+	SetUserActive(userID string, active bool) error
+
+	// Admin: submission management
+	ListSubmissions(status string, page, pageSize int) ([]domain.Submission, int)
+	ReviewSubmission(id, reviewerID, status, note string) (domain.Submission, error)
+
+	// Admin: dashboard stats
+	AdminStats() map[string]int
+
+	// Admin: audit logs
+	ListAuditLogs(page, pageSize int) ([]domain.AuditLog, int)
+	CreateAuditLog(log domain.AuditLog)
 }

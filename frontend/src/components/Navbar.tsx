@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Shield, Home, Terminal, LogOut, Menu, X, User } from 'lucide-react';
+import { Shield, Home, Terminal, LogOut, Menu, X, User, LayoutDashboard } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import styles from './Navbar.module.css';
 
@@ -36,6 +36,15 @@ export function Navbar() {
 
           {isAuthenticated && user ? (
             <>
+              {user.role === 'admin' && (
+                <Link
+                  href="/admin"
+                  className={styles.link}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <LayoutDashboard size={14} /> 管理后台
+                </Link>
+              )}
               <Link
                 href="/account"
                 className={styles.link}

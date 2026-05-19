@@ -1,7 +1,8 @@
-﻿import type { Metadata } from 'next';
+import type { Metadata } from 'next';
 import './globals.css';
 import { Navbar } from '@/components/Navbar';
 import { AuthProvider } from '@/components/AuthProvider';
+import NavbarWrapper from '@/components/NavbarWrapper';
 
 export const metadata: Metadata = {
   title: 'CyberToolkit - 网络安全工具集',
@@ -19,8 +20,8 @@ export default function RootLayout({
     <html lang="zh-CN" data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className="scanline-overlay grid-bg">
         <AuthProvider>
-          <Navbar />
-          <main style={{ paddingTop: '80px' }}>{children}</main>
+          <NavbarWrapper />
+          {children}
         </AuthProvider>
       </body>
     </html>

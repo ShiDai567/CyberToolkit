@@ -79,17 +79,32 @@ type Submission struct {
 	SubmitterEmail string           `json:"submitterEmail,omitempty"`
 	Payload        map[string]any   `json:"payload"`
 	Status         SubmissionStatus `json:"status"`
+	ReviewerID     string           `json:"reviewerId,omitempty"`
 	ReviewNote     string           `json:"reviewNote,omitempty"`
 	CreatedAt      time.Time        `json:"createdAt"`
+	ReviewedAt     *time.Time       `json:"reviewedAt,omitempty"`
+}
+
+type AuditLog struct {
+	ID           string         `json:"id"`
+	UserID       string         `json:"userId,omitempty"`
+	Action       string         `json:"action"`
+	ResourceType string         `json:"resourceType"`
+	ResourceID   string         `json:"resourceId,omitempty"`
+	BeforeData   map[string]any `json:"beforeData,omitempty"`
+	AfterData    map[string]any `json:"afterData,omitempty"`
+	CreatedAt    time.Time      `json:"createdAt"`
 }
 
 type User struct {
-	ID           string    `json:"id"`
-	Email        string    `json:"email"`
-	DisplayName  string    `json:"displayName"`
-	PasswordHash string    `json:"-"`
-	Role         string    `json:"role"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ID           string     `json:"id"`
+	Email        string     `json:"email"`
+	DisplayName  string     `json:"displayName"`
+	PasswordHash string     `json:"-"`
+	Role         string     `json:"role"`
+	IsActive     bool       `json:"isActive"`
+	LastLoginAt  *time.Time `json:"lastLoginAt,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt"`
 }
 
 type ToolFilters struct {
