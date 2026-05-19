@@ -18,10 +18,13 @@ import (
 )
 
 type Store struct {
-	pool *pgxpool.Pool
+	pool             *pgxpool.Pool
+	adminEmail       string
+	adminPassword    string
+	adminDisplayName string
 }
 
-func NewStore(databaseURL string) (*Store, error) {
+func NewStore(databaseURL, adminEmail, adminPassword, adminDisplayName string) (*Store, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -34,7 +37,12 @@ func NewStore(databaseURL string) (*Store, error) {
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 
-	s := &Store{pool: pool}
+	s := &Store{
+		pool:             pool,
+		adminEmail:       adminEmail,
+		adminPassword:    adminPassword,
+		adminDisplayName: adminDisplayName,
+	}
 
 	if err := s.migrate(ctx); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
@@ -44,7 +52,48 @@ func NewStore(databaseURL string) (*Store, error) {
 		return nil, fmt.Errorf("seed: %w", err)
 	}
 
+	if err := s.ensureAdmin(ctx); err != nil {
+		return nil, fmt.Errorf("ensure admin: %w", err)
+	}
+
 	return s, nil
+}
+
+// ensureAdmin guarantees the admin user configured via env vars exists with
+// the configured password and admin role on every startup. This avoids the
+// previous behaviour where the admin was only created during the initial
+// empty-database seed and could not be changed by editing .env later.
+func (s *Store) ensureAdmin(ctx context.Context) error {
+	email := strings.TrimSpace(s.adminEmail)
+	password := s.adminPassword
+	if email == "" || password == "" {
+		return nil
+	}
+
+	displayName := strings.TrimSpace(s.adminDisplayName)
+	if displayName == "" {
+		displayName = "Admin"
+	}
+
+	now := time.Now().UTC()
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE users SET password_hash = $1, display_name = $2, role = 'admin', is_active = true, updated_at = $3
+		 WHERE email = $4`,
+		hashPassword(password), displayName, now, email,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() > 0 {
+		return nil
+	}
+
+	_, err = s.pool.Exec(ctx,
+		`INSERT INTO users (email, password_hash, display_name, role, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'admin', $4, $4)`,
+		email, hashPassword(password), displayName, now,
+	)
+	return err
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -148,7 +197,6 @@ func (s *Store) seed(ctx context.Context) error {
 		DisplayName string
 		Role        string
 	}{
-		{Email: "admin@cybertoolkit.local", Password: "admin123456", DisplayName: "Admin", Role: "admin"},
 		{Email: "editor@cybertoolkit.local", Password: "editor123456", DisplayName: "Editor Demo", Role: "editor"},
 		{Email: "viewer@cybertoolkit.local", Password: "viewer123456", DisplayName: "Viewer Demo", Role: "viewer"},
 	}

@@ -7,22 +7,24 @@ import (
 )
 
 type Config struct {
-	Addr          string
-	AdminEmail    string
-	AdminPassword string
-	CORSOrigins   []string
-	DatabaseURL   string
+	Addr             string
+	AdminEmail       string
+	AdminPassword    string
+	AdminDisplayName string
+	CORSOrigins      []string
+	DatabaseURL      string
 }
 
 func Load() Config {
 	loadDotEnv(".env")
 
 	return Config{
-		Addr:          getAddr(),
-		AdminEmail:    getenvCompat([]string{"ADMIN_EMAIL", "APP_ADMIN_EMAIL"}, "admin@cybertoolkit.local"),
-		AdminPassword: getenvCompat([]string{"ADMIN_PASSWORD", "APP_ADMIN_PASSWORD"}, "admin123456"),
-		CORSOrigins:   getCORSOrigins(),
-		DatabaseURL:   getenvCompat([]string{"DATABASE_URL"}, "postgres://postgres:postgres@localhost:5432/cybertoolkit?sslmode=disable"),
+		Addr:             getAddr(),
+		AdminEmail:       getenvCompat([]string{"ADMIN_EMAIL", "APP_ADMIN_EMAIL"}, "admin@cybertoolkit.local"),
+		AdminPassword:    getenvCompat([]string{"ADMIN_PASSWORD", "APP_ADMIN_PASSWORD"}, "admin123456"),
+		AdminDisplayName: getenvCompat([]string{"ADMIN_USER", "APP_ADMIN_USER"}, "Admin"),
+		CORSOrigins:      getCORSOrigins(),
+		DatabaseURL:      getenvCompat([]string{"DATABASE_URL"}, "postgres://postgres:postgres@localhost:5432/cybertoolkit?sslmode=disable"),
 	}
 }
 
