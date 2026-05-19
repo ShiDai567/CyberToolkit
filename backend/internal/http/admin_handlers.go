@@ -37,7 +37,9 @@ func (api *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, refreshToken, user, err := api.store.Authenticate(request.Email, request.Password)
+	ip := getClientIP(r)
+	userAgent := r.UserAgent()
+	accessToken, refreshToken, user, err := api.store.Authenticate(request.Email, request.Password, ip, userAgent)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", err.Error(), nil)
 		return
@@ -84,7 +86,9 @@ func (api *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, refreshToken, user, err := api.store.Register(request.Email, request.Password, request.DisplayName)
+	ip := getClientIP(r)
+	userAgent := r.UserAgent()
+	accessToken, refreshToken, user, err := api.store.Register(request.Email, request.Password, request.DisplayName, ip, userAgent)
 	if err != nil {
 		writeError(w, http.StatusConflict, "REGISTER_ERROR", err.Error(), nil)
 		return
@@ -167,7 +171,7 @@ func (api *API) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, refreshToken, user, err := api.store.RefreshSession(request.RefreshToken)
+	accessToken, refreshToken, user, err := api.store.RefreshSession(request.RefreshToken, getClientIP(r), r.UserAgent())
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "INVALID_REFRESH_TOKEN", err.Error(), nil)
 		return
@@ -686,6 +690,54 @@ func (api *API) handleAdminAuditLogs(w http.ResponseWriter, r *http.Request) {
 		"total":      total,
 		"totalPages": (total + pageSize - 1) / pageSize,
 	})
+}
+
+func (api *API) handleAdminSessions(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		page := parseIntDefault(r.URL.Query().Get("page"), 1)
+		pageSize := parseIntDefault(r.URL.Query().Get("pageSize"), 20)
+		sessions, total := api.store.ListSessions(page, pageSize)
+		if pageSize < 1 {
+			pageSize = 20
+		}
+		writeJSON(w, http.StatusOK, sessions, meta{
+			"page":       max(page, 1),
+			"pageSize":   pageSize,
+			"total":      total,
+			"totalPages": (total + pageSize - 1) / pageSize,
+		})
+	case http.MethodDelete:
+		var request struct {
+			AccessToken string `json:"accessToken"`
+		}
+		if err := decodeJSON(r, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_JSON", "invalid request body", nil)
+			return
+		}
+		if request.AccessToken == "" {
+			writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "accessToken is required", nil)
+			return
+		}
+		if err := api.store.RevokeSession(request.AccessToken); err != nil {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error(), nil)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"revoked": true}, nil)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+	}
+}
+
+func getClientIP(r *http.Request) string {
+	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+		return strings.Split(ip, ",")[0]
+	}
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return ip
+	}
+	host, _, _ := strings.Cut(r.RemoteAddr, ":")
+	return host
 }
 
 func max(a, b int) int {

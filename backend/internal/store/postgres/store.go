@@ -650,7 +650,7 @@ func (s *Store) CreateSubmission(submission domain.Submission) domain.Submission
 	return submission
 }
 
-func (s *Store) Authenticate(email, password string) (string, string, domain.User, error) {
+func (s *Store) Authenticate(email, password, ip, userAgent string) (string, string, domain.User, error) {
 	ctx := context.Background()
 	var user domain.User
 	err := s.pool.QueryRow(ctx,
@@ -680,13 +680,13 @@ func (s *Store) Authenticate(email, password string) (string, string, domain.Use
 		`UPDATE users SET last_login_at = $1 WHERE id = $2`, now, user.ID,
 	)
 	_, _ = s.pool.Exec(ctx,
-		`INSERT INTO sessions (access_token, user_id, refresh_token, expires_at) VALUES ($1, $2, $3, $4)`,
-		accessToken, user.ID, refreshToken, expiresAt,
+		`INSERT INTO sessions (access_token, user_id, refresh_token, expires_at, ip_address, user_agent, last_active_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		accessToken, user.ID, refreshToken, expiresAt, nilIfEmpty(ip), nilIfEmpty(userAgent), now,
 	)
 	return accessToken, refreshToken, public, nil
 }
 
-func (s *Store) Register(email, password, displayName string) (string, string, domain.User, error) {
+func (s *Store) Register(email, password, displayName, ip, userAgent string) (string, string, domain.User, error) {
 	ctx := context.Background()
 
 	var exists int
@@ -727,8 +727,8 @@ func (s *Store) Register(email, password, displayName string) (string, string, d
 	public := publicUser(user)
 	expiresAt := now.Add(24 * time.Hour)
 	_, _ = s.pool.Exec(ctx,
-		`INSERT INTO sessions (access_token, user_id, refresh_token, expires_at) VALUES ($1, $2, $3, $4)`,
-		accessToken, user.ID, refreshToken, expiresAt,
+		`INSERT INTO sessions (access_token, user_id, refresh_token, expires_at, ip_address, user_agent, last_active_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		accessToken, user.ID, refreshToken, expiresAt, nilIfEmpty(ip), nilIfEmpty(userAgent), now,
 	)
 	return accessToken, refreshToken, public, nil
 }
@@ -740,8 +740,16 @@ func (s *Store) ValidateSession(token string) (domain.User, bool) {
 
 	var user domain.User
 	err := s.pool.QueryRow(ctx,
-		`SELECT u.id::text, u.email, u.display_name, u.role, u.is_active, u.created_at FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.access_token = $1 AND s.expires_at > now()`,
+		`UPDATE sessions SET last_active_at = now() WHERE access_token = $1 AND expires_at > now() RETURNING user_id`,
 		token,
+	).Scan(&user.ID)
+	if err != nil {
+		return domain.User{}, false
+	}
+
+	err = s.pool.QueryRow(ctx,
+		`SELECT id::text, email, display_name, role, is_active, created_at FROM users WHERE id = $1`,
+		user.ID,
 	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
 	if err != nil {
 		return domain.User{}, false
@@ -754,7 +762,7 @@ func (s *Store) DeleteSession(token string) {
 	_, _ = s.pool.Exec(ctx, `DELETE FROM sessions WHERE access_token = $1`, token)
 }
 
-func (s *Store) RefreshSession(refreshToken string) (string, string, domain.User, error) {
+func (s *Store) RefreshSession(refreshToken, ip, userAgent string) (string, string, domain.User, error) {
 	ctx := context.Background()
 	// Clean up expired sessions
 	_, _ = s.pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
@@ -790,9 +798,10 @@ func (s *Store) RefreshSession(refreshToken string) (string, string, domain.User
 	}
 
 	expiresAt := time.Now().UTC().Add(24 * time.Hour)
+	now := time.Now().UTC()
 	_, err = tx.Exec(ctx,
-		`INSERT INTO sessions (access_token, user_id, refresh_token, expires_at) VALUES ($1, $2, $3, $4)`,
-		newAccessToken, user.ID, newRefreshToken, expiresAt,
+		`INSERT INTO sessions (access_token, user_id, refresh_token, expires_at, ip_address, user_agent, last_active_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		newAccessToken, user.ID, newRefreshToken, expiresAt, nilIfEmpty(ip), nilIfEmpty(userAgent), now,
 	)
 	if err != nil {
 		return "", "", domain.User{}, err
@@ -1124,6 +1133,70 @@ func (s *Store) CreateAuditLog(log domain.AuditLog) {
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		nilIfEmpty(log.UserID), log.Action, log.ResourceType, nilIfEmpty(log.ResourceID), log.BeforeData, log.AfterData, time.Now().UTC(),
 	)
+}
+
+// ── Admin: session management ──
+
+func (s *Store) ListSessions(page, pageSize int) ([]domain.Session, int) {
+	ctx := context.Background()
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	var total int
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM sessions WHERE expires_at > now()`).Scan(&total)
+
+	offset := (page - 1) * pageSize
+	rows, err := s.pool.Query(ctx,
+		`SELECT s.access_token, s.user_id::text, u.email, u.display_name, u.role,
+		        COALESCE(s.ip_address, ''), COALESCE(s.user_agent, ''),
+		        s.created_at, s.last_active_at, s.expires_at
+		 FROM sessions s
+		 JOIN users u ON s.user_id = u.id
+		 WHERE s.expires_at > now()
+		 ORDER BY s.last_active_at DESC
+		 LIMIT $1 OFFSET $2`,
+		pageSize, offset,
+	)
+	if err != nil {
+		return nil, total
+	}
+	defer rows.Close()
+
+	var out []domain.Session
+	for rows.Next() {
+		var sess domain.Session
+		if err := rows.Scan(&sess.AccessToken, &sess.UserID, &sess.UserEmail, &sess.UserDisplayName, &sess.UserRole, &sess.IPAddress, &sess.UserAgent, &sess.CreatedAt, &sess.LastActiveAt, &sess.ExpiresAt); err != nil {
+			continue
+		}
+		out = append(out, sess)
+	}
+	return out, total
+}
+
+func (s *Store) RevokeSession(accessToken string) error {
+	ctx := context.Background()
+	tag, err := s.pool.Exec(ctx, `DELETE FROM sessions WHERE access_token = $1`, accessToken)
+	if err != nil || tag.RowsAffected() == 0 {
+		return errors.New("session not found")
+	}
+	return nil
+}
+
+func (s *Store) UpdateSessionLastActive(token, ip, userAgent string) {
+	ctx := context.Background()
+	if ip != "" || userAgent != "" {
+		_, _ = s.pool.Exec(ctx,
+			`UPDATE sessions SET last_active_at = now(), ip_address = COALESCE(NULLIF($1, ''), ip_address), user_agent = COALESCE(NULLIF($2, ''), user_agent) WHERE access_token = $3`,
+			nilIfEmpty(ip), nilIfEmpty(userAgent), token,
+		)
+	}
 }
 
 func nilIfEmpty(s string) interface{} {

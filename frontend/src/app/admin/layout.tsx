@@ -10,6 +10,7 @@ import {
   FolderTree,
   Users,
   Inbox,
+  Monitor,
   ArrowLeft,
   User,
 } from 'lucide-react';
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { href: '/admin/categories', label: '分类管理', icon: FolderTree, exact: false },
   { href: '/admin/users', label: '用户管理', icon: Users, exact: false },
   { href: '/admin/submissions', label: '投稿审核', icon: Inbox, exact: false },
+  { href: '/admin/sessions', label: '会话管理', icon: Monitor, exact: false },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {

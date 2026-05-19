@@ -19,11 +19,11 @@ type Store interface {
 	RelatedTools(categoryID, exceptToolID string, limit int) []domain.Tool
 	ReplaceToolTags(toolID string, tagNames []string)
 	CreateSubmission(submission domain.Submission) domain.Submission
-	Authenticate(email, password string) (string, string, domain.User, error)
-	Register(email, password, displayName string) (string, string, domain.User, error)
+	Authenticate(email, password, ip, userAgent string) (string, string, domain.User, error)
+	Register(email, password, displayName, ip, userAgent string) (string, string, domain.User, error)
 	ValidateSession(token string) (domain.User, bool)
 	DeleteSession(token string)
-	RefreshSession(refreshToken string) (string, string, domain.User, error)
+	RefreshSession(refreshToken, ip, userAgent string) (string, string, domain.User, error)
 	FindUserByEmail(email string) (domain.User, bool)
 	UpdateUserProfile(userID string, displayName string) (domain.User, error)
 	UpdateUserPassword(userID, currentPassword, newPassword string) error
@@ -44,4 +44,11 @@ type Store interface {
 	// Admin: audit logs
 	ListAuditLogs(page, pageSize int) ([]domain.AuditLog, int)
 	CreateAuditLog(log domain.AuditLog)
+
+	// Admin: session management
+	ListSessions(page, pageSize int) ([]domain.Session, int)
+	RevokeSession(accessToken string) error
+
+	// User session tracking
+	UpdateSessionLastActive(token, ip, userAgent string)
 }

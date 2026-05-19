@@ -106,7 +106,10 @@ create table sessions (
   user_id uuid not null references users(id) on delete cascade,
   refresh_token varchar(64) not null unique,
   expires_at timestamptz not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  ip_address varchar(45),
+  user_agent text,
+  last_active_at timestamptz not null default now()
 );
 
 create index idx_sessions_refresh_token on sessions(refresh_token);

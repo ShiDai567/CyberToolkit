@@ -118,3 +118,16 @@ type ToolFilters struct {
 	Sort       string
 	Status     string
 }
+
+type Session struct {
+	AccessToken string    `json:"accessToken"`
+	UserID      string    `json:"userId"`
+	UserEmail   string    `json:"userEmail"`
+	UserDisplayName string `json:"userDisplayName"`
+	UserRole    string    `json:"userRole"`
+	IPAddress   string    `json:"ipAddress,omitempty"`
+	UserAgent   string    `json:"userAgent,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+	LastActiveAt time.Time `json:"lastActiveAt"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}

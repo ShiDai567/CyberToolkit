@@ -45,6 +45,7 @@ func NewRouter(cfg config.Config, store store.Store) http.Handler {
 	mux.HandleFunc("/api/v1/admin/submissions", api.requireAdmin(api.handleAdminSubmissions))
 	mux.HandleFunc("/api/v1/admin/submissions/", api.requireAdmin(api.handleAdminSubmissionByID))
 	mux.HandleFunc("/api/v1/admin/audit-logs", api.requireAdmin(api.handleAdminAuditLogs))
+	mux.HandleFunc("/api/v1/admin/sessions", api.requireAdmin(api.handleAdminSessions))
 
 	return withCORS(withJSON(withLogger(mux)), cfg.CORSOrigins)
 }

@@ -133,6 +133,19 @@ export interface AdminAuditLog {
   createdAt: string;
 }
 
+export interface AdminSession {
+  accessToken: string;
+  userId: string;
+  userEmail: string;
+  userDisplayName: string;
+  userRole: string;
+  ipAddress: string;
+  userAgent: string;
+  createdAt: string;
+  lastActiveAt: string;
+  expiresAt: string;
+}
+
 export interface PaginationMeta {
   page: number;
   pageSize: number;
@@ -331,4 +344,31 @@ export async function getAdminAuditLogs(
     token,
   );
   return { data: res.data || [], meta: res.meta as PaginationMeta };
+}
+
+// ── Sessions ──
+
+export async function getAdminSessions(
+  token: string,
+  page = 1,
+  pageSize = 20,
+): Promise<{ data: AdminSession[]; meta: PaginationMeta }> {
+  const res = await adminRequest<AdminSession[]>(
+    'GET',
+    `/api/v1/admin/sessions?page=${page}&pageSize=${pageSize}`,
+    token,
+  );
+  return { data: res.data || [], meta: res.meta as PaginationMeta };
+}
+
+export async function revokeAdminSession(
+  token: string,
+  accessToken: string,
+): Promise<void> {
+  await adminRequest<{ revoked: boolean }>(
+    'DELETE',
+    '/api/v1/admin/sessions',
+    token,
+    { accessToken },
+  );
 }
