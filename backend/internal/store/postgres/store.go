@@ -8,23 +8,25 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 
 	"cybertoolkit/backend/internal/domain"
 )
 
 type Store struct {
 	pool             *pgxpool.Pool
+	redis            *redis.Client
 	adminEmail       string
 	adminPassword    string
 	adminDisplayName string
 }
 
-func NewStore(databaseURL, adminEmail, adminPassword, adminDisplayName string) (*Store, error) {
+func NewStore(databaseURL, redisURL, adminEmail, adminPassword, adminDisplayName string) (*Store, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -37,8 +39,18 @@ func NewStore(databaseURL, adminEmail, adminPassword, adminDisplayName string) (
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 
+	redisOpts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse redis url: %w", err)
+	}
+	rdb := redis.NewClient(redisOpts)
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		return nil, fmt.Errorf("ping redis: %w", err)
+	}
+
 	s := &Store{
 		pool:             pool,
+		redis:            rdb,
 		adminEmail:       adminEmail,
 		adminPassword:    adminPassword,
 		adminDisplayName: adminDisplayName,
@@ -650,6 +662,12 @@ func (s *Store) CreateSubmission(submission domain.Submission) domain.Submission
 	return submission
 }
 
+const sessionTTL = 24 * time.Hour
+
+func sessKey(token string) string    { return "sess:" + token }
+func refreshKey(token string) string { return "refresh:" + token }
+func userSessKey(userID string) string { return "user_sessions:" + userID }
+
 func (s *Store) Authenticate(email, password, ip, userAgent string) (string, string, domain.User, error) {
 	ctx := context.Background()
 	var user domain.User
@@ -674,16 +692,13 @@ func (s *Store) Authenticate(email, password, ip, userAgent string) (string, str
 	}
 
 	now := time.Now().UTC()
-	public := publicUser(user)
-	expiresAt := now.Add(24 * time.Hour)
-	_, _ = s.pool.Exec(ctx,
-		`UPDATE users SET last_login_at = $1 WHERE id = $2`, now, user.ID,
-	)
-	_, _ = s.pool.Exec(ctx,
-		`INSERT INTO sessions (access_token, user_id, refresh_token, expires_at, ip_address, user_agent, last_active_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		accessToken, user.ID, refreshToken, expiresAt, nilIfEmpty(ip), nilIfEmpty(userAgent), now,
-	)
-	return accessToken, refreshToken, public, nil
+	_, _ = s.pool.Exec(ctx, `UPDATE users SET last_login_at = $1 WHERE id = $2`, now, user.ID)
+
+	if err := s.writeSession(ctx, accessToken, refreshToken, user, ip, userAgent, now); err != nil {
+		return "", "", domain.User{}, err
+	}
+
+	return accessToken, refreshToken, publicUser(user), nil
 }
 
 func (s *Store) Register(email, password, displayName, ip, userAgent string) (string, string, domain.User, error) {
@@ -707,12 +722,8 @@ func (s *Store) Register(email, password, displayName, ip, userAgent string) (st
 	}
 
 	user := domain.User{
-		ID:          id,
-		Email:       email,
-		DisplayName: displayName,
-		Role:        "viewer",
-		IsActive:    true,
-		CreatedAt:   now,
+		ID: id, Email: email, DisplayName: displayName,
+		Role: "viewer", IsActive: true, CreatedAt: now,
 	}
 
 	accessToken, err := randomToken()
@@ -724,32 +735,61 @@ func (s *Store) Register(email, password, displayName, ip, userAgent string) (st
 		return "", "", domain.User{}, err
 	}
 
-	public := publicUser(user)
-	expiresAt := now.Add(24 * time.Hour)
-	_, _ = s.pool.Exec(ctx,
-		`INSERT INTO sessions (access_token, user_id, refresh_token, expires_at, ip_address, user_agent, last_active_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		accessToken, user.ID, refreshToken, expiresAt, nilIfEmpty(ip), nilIfEmpty(userAgent), now,
-	)
-	return accessToken, refreshToken, public, nil
+	if err := s.writeSession(ctx, accessToken, refreshToken, user, ip, userAgent, now); err != nil {
+		return "", "", domain.User{}, err
+	}
+
+	return accessToken, refreshToken, publicUser(user), nil
+}
+
+// writeSession stores session data in Redis and adds the token to the user's session set.
+func (s *Store) writeSession(ctx context.Context, accessToken, refreshToken string, user domain.User, ip, userAgent string, now time.Time) error {
+	expiresAt := now.Add(sessionTTL)
+	pipe := s.redis.Pipeline()
+
+	pipe.HSet(ctx, sessKey(accessToken), map[string]interface{}{
+		"user_id":           user.ID,
+		"user_email":        user.Email,
+		"user_display_name": user.DisplayName,
+		"user_role":         user.Role,
+		"refresh_token":     refreshToken,
+		"ip_address":        ip,
+		"user_agent":        userAgent,
+		"created_at":        now.Format(time.RFC3339),
+		"last_active_at":    now.Format(time.RFC3339),
+		"expires_at":        expiresAt.Format(time.RFC3339),
+	})
+	pipe.Expire(ctx, sessKey(accessToken), sessionTTL)
+	pipe.Set(ctx, refreshKey(refreshToken), accessToken, sessionTTL)
+	pipe.SAdd(ctx, userSessKey(user.ID), accessToken)
+
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func (s *Store) ValidateSession(token string) (domain.User, bool) {
 	ctx := context.Background()
-	// Clean up expired sessions
-	_, _ = s.pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
 
-	var user domain.User
-	err := s.pool.QueryRow(ctx,
-		`UPDATE sessions SET last_active_at = now() WHERE access_token = $1 AND expires_at > now() RETURNING user_id`,
-		token,
-	).Scan(&user.ID)
-	if err != nil {
+	data, err := s.redis.HGetAll(ctx, sessKey(token)).Result()
+	if err != nil || len(data) == 0 {
 		return domain.User{}, false
 	}
 
+	// Check expiry (Redis TTL handles it, but guard against clock skew)
+	expiresAt, _ := time.Parse(time.RFC3339, data["expires_at"])
+	if time.Now().UTC().After(expiresAt) {
+		return domain.User{}, false
+	}
+
+	// Update last_active_at asynchronously
+	go s.redis.HSet(context.Background(), sessKey(token), "last_active_at", time.Now().UTC().Format(time.RFC3339))
+
+	// Always fetch user from PG so role/isActive changes are reflected immediately
+	userID := data["user_id"]
+	var user domain.User
 	err = s.pool.QueryRow(ctx,
-		`SELECT id::text, email, display_name, role, is_active, created_at FROM users WHERE id = $1`,
-		user.ID,
+		`SELECT id::text, email, display_name, role, is_active, created_at FROM users WHERE id = $1 AND is_active = true`,
+		userID,
 	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
 	if err != nil {
 		return domain.User{}, false
@@ -759,21 +799,49 @@ func (s *Store) ValidateSession(token string) (domain.User, bool) {
 
 func (s *Store) DeleteSession(token string) {
 	ctx := context.Background()
-	_, _ = s.pool.Exec(ctx, `DELETE FROM sessions WHERE access_token = $1`, token)
+	// Get refresh token before deleting
+	rt, _ := s.redis.HGet(ctx, sessKey(token), "refresh_token").Result()
+	userID, _ := s.redis.HGet(ctx, sessKey(token), "user_id").Result()
+
+	pipe := s.redis.Pipeline()
+	pipe.Del(ctx, sessKey(token))
+	if rt != "" {
+		pipe.Del(ctx, refreshKey(rt))
+	}
+	if userID != "" {
+		pipe.SRem(ctx, userSessKey(userID), token)
+	}
+	_, _ = pipe.Exec(ctx)
 }
 
 func (s *Store) RefreshSession(refreshToken, ip, userAgent string) (string, string, domain.User, error) {
 	ctx := context.Background()
-	// Clean up expired sessions
-	_, _ = s.pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
 
-	var user domain.User
-	err := s.pool.QueryRow(ctx,
-		`SELECT u.id::text, u.email, u.display_name, u.role, u.is_active, u.created_at FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.refresh_token = $1 AND s.expires_at > now()`,
-		refreshToken,
-	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
+	// Look up access token from refresh token
+	oldAccessToken, err := s.redis.Get(ctx, refreshKey(refreshToken)).Result()
 	if err != nil {
 		return "", "", domain.User{}, errors.New("invalid refresh token")
+	}
+
+	// Get session data
+	data, err := s.redis.HGetAll(ctx, sessKey(oldAccessToken)).Result()
+	if err != nil || len(data) == 0 {
+		return "", "", domain.User{}, errors.New("invalid refresh token")
+	}
+
+	expiresAt, _ := time.Parse(time.RFC3339, data["expires_at"])
+	if time.Now().UTC().After(expiresAt) {
+		return "", "", domain.User{}, errors.New("refresh token expired")
+	}
+
+	userID := data["user_id"]
+	var user domain.User
+	err = s.pool.QueryRow(ctx,
+		`SELECT id::text, email, display_name, role, is_active, created_at FROM users WHERE id = $1 AND is_active = true`,
+		userID,
+	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
+	if err != nil {
+		return "", "", domain.User{}, errors.New("user not found")
 	}
 
 	newAccessToken, err := randomToken()
@@ -785,33 +853,196 @@ func (s *Store) RefreshSession(refreshToken, ip, userAgent string) (string, stri
 		return "", "", domain.User{}, err
 	}
 
-	// Delete old session and create new one in a transaction
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return "", "", domain.User{}, err
-	}
-	defer tx.Rollback(ctx)
-
-	_, err = tx.Exec(ctx, `DELETE FROM sessions WHERE refresh_token = $1`, refreshToken)
-	if err != nil {
-		return "", "", domain.User{}, err
-	}
-
-	expiresAt := time.Now().UTC().Add(24 * time.Hour)
 	now := time.Now().UTC()
-	_, err = tx.Exec(ctx,
-		`INSERT INTO sessions (access_token, user_id, refresh_token, expires_at, ip_address, user_agent, last_active_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		newAccessToken, user.ID, newRefreshToken, expiresAt, nilIfEmpty(ip), nilIfEmpty(userAgent), now,
-	)
-	if err != nil {
+
+	// Delete old session
+	pipe := s.redis.Pipeline()
+	pipe.Del(ctx, sessKey(oldAccessToken))
+	pipe.Del(ctx, refreshKey(refreshToken))
+	pipe.SRem(ctx, userSessKey(userID), oldAccessToken)
+	if _, err := pipe.Exec(ctx); err != nil {
 		return "", "", domain.User{}, err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
+	// Write new session
+	if err := s.writeSession(ctx, newAccessToken, newRefreshToken, user, ip, userAgent, now); err != nil {
 		return "", "", domain.User{}, err
 	}
 
 	return newAccessToken, newRefreshToken, publicUser(user), nil
+}
+
+func (s *Store) ListUserSessions(userID string) ([]domain.Session, error) {
+	ctx := context.Background()
+
+	tokens, err := s.redis.SMembers(ctx, userSessKey(userID)).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	var sessions []domain.Session
+	for _, token := range tokens {
+		data, err := s.redis.HGetAll(ctx, sessKey(token)).Result()
+		if err != nil || len(data) == 0 {
+			// Token expired/missing — clean up the set entry
+			s.redis.SRem(ctx, userSessKey(userID), token)
+			continue
+		}
+		expiresAt, _ := time.Parse(time.RFC3339, data["expires_at"])
+		if now.After(expiresAt) {
+			s.redis.SRem(ctx, userSessKey(userID), token)
+			continue
+		}
+		createdAt, _ := time.Parse(time.RFC3339, data["created_at"])
+		lastActiveAt, _ := time.Parse(time.RFC3339, data["last_active_at"])
+		sessions = append(sessions, domain.Session{
+			AccessToken:     token,
+			UserID:          userID,
+			UserEmail:       data["user_email"],
+			UserDisplayName: data["user_display_name"],
+			UserRole:        data["user_role"],
+			IPAddress:       data["ip_address"],
+			UserAgent:       data["user_agent"],
+			CreatedAt:       createdAt,
+			LastActiveAt:    lastActiveAt,
+			ExpiresAt:       expiresAt,
+		})
+	}
+
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].LastActiveAt.After(sessions[j].LastActiveAt)
+	})
+	return sessions, nil
+}
+
+func (s *Store) RevokeUserSessions(userID string, exceptToken string) (int, error) {
+	ctx := context.Background()
+
+	tokens, err := s.redis.SMembers(ctx, userSessKey(userID)).Result()
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, token := range tokens {
+		if token == exceptToken {
+			continue
+		}
+		rt, _ := s.redis.HGet(ctx, sessKey(token), "refresh_token").Result()
+		pipe := s.redis.Pipeline()
+		pipe.Del(ctx, sessKey(token))
+		if rt != "" {
+			pipe.Del(ctx, refreshKey(rt))
+		}
+		pipe.SRem(ctx, userSessKey(userID), token)
+		if _, err := pipe.Exec(ctx); err == nil {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// ── Admin: session management ──
+
+func (s *Store) ListSessions(page, pageSize int) ([]domain.Session, int) {
+	ctx := context.Background()
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	// SCAN all session keys
+	var keys []string
+	var cursor uint64
+	for {
+		batch, nextCursor, err := s.redis.Scan(ctx, cursor, "sess:*", 100).Result()
+		if err != nil {
+			break
+		}
+		keys = append(keys, batch...)
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+
+	now := time.Now().UTC()
+	var sessions []domain.Session
+	for _, key := range keys {
+		data, err := s.redis.HGetAll(ctx, key).Result()
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		expiresAt, _ := time.Parse(time.RFC3339, data["expires_at"])
+		if now.After(expiresAt) {
+			continue // skip expired (TTL may not have fired yet)
+		}
+		createdAt, _ := time.Parse(time.RFC3339, data["created_at"])
+		lastActiveAt, _ := time.Parse(time.RFC3339, data["last_active_at"])
+		accessToken := strings.TrimPrefix(key, "sess:")
+
+		sessions = append(sessions, domain.Session{
+			AccessToken:     accessToken,
+			UserID:          data["user_id"],
+			UserEmail:       data["user_email"],
+			UserDisplayName: data["user_display_name"],
+			UserRole:        data["user_role"],
+			IPAddress:       data["ip_address"],
+			UserAgent:       data["user_agent"],
+			CreatedAt:       createdAt,
+			LastActiveAt:    lastActiveAt,
+			ExpiresAt:       expiresAt,
+		})
+	}
+
+	// Sort by LastActiveAt descending
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].LastActiveAt.After(sessions[j].LastActiveAt)
+	})
+
+	total := len(sessions)
+	start := (page - 1) * pageSize
+	if start >= total {
+		return []domain.Session{}, total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	return sessions[start:end], total
+}
+
+func (s *Store) RevokeSession(accessToken string) error {
+	ctx := context.Background()
+
+	data, err := s.redis.HGetAll(ctx, sessKey(accessToken)).Result()
+	if err != nil || len(data) == 0 {
+		return errors.New("session not found")
+	}
+
+	rt := data["refresh_token"]
+	userID := data["user_id"]
+
+	pipe := s.redis.Pipeline()
+	pipe.Del(ctx, sessKey(accessToken))
+	if rt != "" {
+		pipe.Del(ctx, refreshKey(rt))
+	}
+	if userID != "" {
+		pipe.SRem(ctx, userSessKey(userID), accessToken)
+	}
+	_, err = pipe.Exec(ctx)
+	return err
+}
+
+func (s *Store) UpdateSessionLastActive(token, ip, userAgent string) {
+	// No-op: ValidateSession now updates last_active_at asynchronously.
 }
 
 func (s *Store) FindUserByEmail(email string) (domain.User, bool) {
@@ -865,27 +1096,6 @@ func (s *Store) UpdateUserPassword(userID, currentPassword, newPassword string) 
 		return errors.New("failed to update password")
 	}
 	return nil
-}
-
-func (s *Store) RevokeUserSessions(userID string, exceptToken string) (int, error) {
-	ctx := context.Background()
-	var (
-		tag pgconn.CommandTag
-		err error
-	)
-	if exceptToken == "" {
-		tag, err = s.pool.Exec(ctx,
-			`DELETE FROM sessions WHERE user_id = $1`, userID,
-		)
-	} else {
-		tag, err = s.pool.Exec(ctx,
-			`DELETE FROM sessions WHERE user_id = $1 AND access_token <> $2`, userID, exceptToken,
-		)
-	}
-	if err != nil {
-		return 0, err
-	}
-	return int(tag.RowsAffected()), nil
 }
 
 func hashPassword(password string) string {
@@ -994,7 +1204,7 @@ func (s *Store) SetUserActive(userID string, active bool) error {
 		return errors.New("user not found")
 	}
 	if !active {
-		_, _ = s.pool.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID)
+		_, _ = s.RevokeUserSessions(userID, "")
 	}
 	return nil
 }
@@ -1133,70 +1343,6 @@ func (s *Store) CreateAuditLog(log domain.AuditLog) {
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		nilIfEmpty(log.UserID), log.Action, log.ResourceType, nilIfEmpty(log.ResourceID), log.BeforeData, log.AfterData, time.Now().UTC(),
 	)
-}
-
-// ── Admin: session management ──
-
-func (s *Store) ListSessions(page, pageSize int) ([]domain.Session, int) {
-	ctx := context.Background()
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 {
-		pageSize = 20
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
-
-	var total int
-	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM sessions WHERE expires_at > now()`).Scan(&total)
-
-	offset := (page - 1) * pageSize
-	rows, err := s.pool.Query(ctx,
-		`SELECT s.access_token, s.user_id::text, u.email, u.display_name, u.role,
-		        COALESCE(s.ip_address, ''), COALESCE(s.user_agent, ''),
-		        s.created_at, s.last_active_at, s.expires_at
-		 FROM sessions s
-		 JOIN users u ON s.user_id = u.id
-		 WHERE s.expires_at > now()
-		 ORDER BY s.last_active_at DESC
-		 LIMIT $1 OFFSET $2`,
-		pageSize, offset,
-	)
-	if err != nil {
-		return nil, total
-	}
-	defer rows.Close()
-
-	var out []domain.Session
-	for rows.Next() {
-		var sess domain.Session
-		if err := rows.Scan(&sess.AccessToken, &sess.UserID, &sess.UserEmail, &sess.UserDisplayName, &sess.UserRole, &sess.IPAddress, &sess.UserAgent, &sess.CreatedAt, &sess.LastActiveAt, &sess.ExpiresAt); err != nil {
-			continue
-		}
-		out = append(out, sess)
-	}
-	return out, total
-}
-
-func (s *Store) RevokeSession(accessToken string) error {
-	ctx := context.Background()
-	tag, err := s.pool.Exec(ctx, `DELETE FROM sessions WHERE access_token = $1`, accessToken)
-	if err != nil || tag.RowsAffected() == 0 {
-		return errors.New("session not found")
-	}
-	return nil
-}
-
-func (s *Store) UpdateSessionLastActive(token, ip, userAgent string) {
-	ctx := context.Background()
-	if ip != "" || userAgent != "" {
-		_, _ = s.pool.Exec(ctx,
-			`UPDATE sessions SET last_active_at = now(), ip_address = COALESCE(NULLIF($1, ''), ip_address), user_agent = COALESCE(NULLIF($2, ''), user_agent) WHERE access_token = $3`,
-			nilIfEmpty(ip), nilIfEmpty(userAgent), token,
-		)
-	}
 }
 
 func nilIfEmpty(s string) interface{} {

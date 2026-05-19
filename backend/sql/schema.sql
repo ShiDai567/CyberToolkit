@@ -100,17 +100,3 @@ create index idx_tools_category_status on tools(category_id, status);
 create index idx_tool_submissions_status on tool_submissions(status);
 create index idx_audit_logs_user_id on audit_logs(user_id);
 create index idx_audit_logs_resource on audit_logs(resource_type, resource_id);
-
-create table sessions (
-  access_token varchar(64) primary key,
-  user_id uuid not null references users(id) on delete cascade,
-  refresh_token varchar(64) not null unique,
-  expires_at timestamptz not null,
-  created_at timestamptz not null default now(),
-  ip_address varchar(45),
-  user_agent text,
-  last_active_at timestamptz not null default now()
-);
-
-create index idx_sessions_refresh_token on sessions(refresh_token);
-create index idx_sessions_expires_at on sessions(expires_at);

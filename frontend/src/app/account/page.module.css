@@ -582,6 +582,101 @@
   color: #fde68a;
 }
 
+.sessionList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sessionCardCurrent {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.currentBadge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  font-family: var(--font-heading);
+  font-size: 0.62rem;
+  color: var(--color-cta);
+  letter-spacing: 0.08em;
+  vertical-align: middle;
+}
+
+.sessionMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  color: var(--color-text-dim);
+}
+
+.sessionMeta svg {
+  vertical-align: middle;
+  margin-right: 2px;
+}
+
+.sessionToken {
+  font-family: var(--font-body);
+  font-size: 0.68rem;
+  color: var(--color-text-dim);
+  opacity: 0.7;
+  letter-spacing: 0.04em;
+}
+
+.sessionsLoading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 0;
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  color: var(--color-text-muted);
+}
+
+.sessionsEmpty {
+  padding: 24px 0;
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  color: var(--color-text-dim);
+}
+
+.btnRevokeSmall {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: rgba(239, 68, 68, 0.06);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-heading);
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 200ms ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btnRevokeSmall:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.btnRevokeSmall:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ---------- Empty / loading ---------- */
 
 .empty {

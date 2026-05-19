@@ -15,7 +15,7 @@ type Server struct {
 
 func New() (*Server, error) {
 	cfg := config.Load()
-	store, err := postgres.NewStore(cfg.DatabaseURL, cfg.AdminEmail, cfg.AdminPassword, cfg.AdminDisplayName)
+	store, err := postgres.NewStore(cfg.DatabaseURL, cfg.RedisURL, cfg.AdminEmail, cfg.AdminPassword, cfg.AdminDisplayName)
 	if err != nil {
 		return nil, err
 	}

@@ -13,6 +13,7 @@ type Config struct {
 	AdminDisplayName string
 	CORSOrigins      []string
 	DatabaseURL      string
+	RedisURL         string
 }
 
 func Load() Config {
@@ -25,6 +26,7 @@ func Load() Config {
 		AdminDisplayName: getenvCompat([]string{"ADMIN_USER", "APP_ADMIN_USER"}, "Admin"),
 		CORSOrigins:      getCORSOrigins(),
 		DatabaseURL:      getenvCompat([]string{"DATABASE_URL"}, "postgres://postgres:postgres@localhost:5432/cybertoolkit?sslmode=disable"),
+		RedisURL:         getenvCompat([]string{"REDIS_URL"}, "redis://localhost:6379/0"),
 	}
 }
 

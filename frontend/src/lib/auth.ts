@@ -180,6 +180,45 @@ interface RevokeSessionsResult {
   keepCurrent: boolean;
 }
 
+export interface UserSession {
+  accessToken: string;
+  tokenPreview: string;
+  isCurrent: boolean;
+  ipAddress: string;
+  userAgent: string;
+  createdAt: string;
+  lastActiveAt: string;
+  expiresAt: string;
+}
+
+export async function listUserSessions(token: string): Promise<UserSession[]> {
+  const response = await fetch(`${getClientAPIBaseURL()}/api/v1/auth/sessions`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const text = await response.text();
+  const payload = JSON.parse(text) as { data: UserSession[] } | ApiError;
+  if (!response.ok) {
+    throw new Error((payload as ApiError).error?.message || `Request failed: ${response.status}`);
+  }
+  return (payload as { data: UserSession[] }).data ?? [];
+}
+
+export async function revokeUserSession(token: string, accessToken: string): Promise<void> {
+  const response = await fetch(`${getClientAPIBaseURL()}/api/v1/auth/sessions`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ accessToken }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    const payload = JSON.parse(text) as ApiError;
+    throw new Error(payload.error?.message || `Request failed: ${response.status}`);
+  }
+}
+
 export async function revokeOtherSessions(
   token: string,
   keepCurrent = true,

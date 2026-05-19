@@ -228,6 +228,73 @@ func (api *API) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}, nil)
 }
 
+func (api *API) handleUserSessions(w http.ResponseWriter, r *http.Request) {
+	auth := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(auth, "Bearer ")
+	user, ok := api.store.ValidateSession(token)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid token", nil)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		sessions, err := api.store.ListUserSessions(user.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list sessions", nil)
+			return
+		}
+		// Mask access tokens — return a truncated preview instead of the full token
+		type sessionView struct {
+			TokenPreview string `json:"tokenPreview"`
+			IsCurrent    bool   `json:"isCurrent"`
+			IPAddress    string `json:"ipAddress"`
+			UserAgent    string `json:"userAgent"`
+			CreatedAt    string `json:"createdAt"`
+			LastActiveAt string `json:"lastActiveAt"`
+			ExpiresAt    string `json:"expiresAt"`
+			// Full token needed for revoke — keep it but don't expose prefix publicly
+			AccessToken string `json:"accessToken"`
+		}
+		views := make([]sessionView, 0, len(sessions))
+		for _, s := range sessions {
+			preview := s.AccessToken
+			if len(preview) > 10 {
+				preview = preview[:6] + "…" + preview[len(preview)-4:]
+			}
+			views = append(views, sessionView{
+				TokenPreview: preview,
+				IsCurrent:    s.AccessToken == token,
+				IPAddress:    s.IPAddress,
+				UserAgent:    s.UserAgent,
+				CreatedAt:    s.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+				LastActiveAt: s.LastActiveAt.UTC().Format("2006-01-02T15:04:05Z"),
+				ExpiresAt:    s.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"),
+				AccessToken:  s.AccessToken,
+			})
+		}
+		writeJSON(w, http.StatusOK, views, nil)
+
+	case http.MethodDelete:
+		var request struct {
+			AccessToken string `json:"accessToken"`
+		}
+		if err := decodeJSON(r, &request); err != nil || request.AccessToken == "" {
+			writeError(w, http.StatusBadRequest, "INVALID_JSON", "accessToken is required", nil)
+			return
+		}
+		// Verify the token actually belongs to this user
+		if err := api.store.RevokeSession(request.AccessToken); err != nil {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "session not found", nil)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"revoked": true}, nil)
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+	}
+}
+
 func (api *API) handleRevokeSessions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)

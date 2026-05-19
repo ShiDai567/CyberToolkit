@@ -33,6 +33,7 @@ func NewRouter(cfg config.Config, store store.Store) http.Handler {
 	mux.HandleFunc("/api/v1/auth/refresh", api.handleRefresh)
 	mux.HandleFunc("/api/v1/auth/password", api.requireAuth(api.handleChangePassword))
 	mux.HandleFunc("/api/v1/auth/sessions/revoke", api.requireAuth(api.handleRevokeSessions))
+	mux.HandleFunc("/api/v1/auth/sessions", api.requireAuth(api.handleUserSessions))
 	mux.HandleFunc("/api/v1/admin/auth/login", api.handleLogin)
 	mux.HandleFunc("/api/v1/admin/me", api.requireAdmin(api.handleAdminMe))
 	mux.HandleFunc("/api/v1/admin/categories", api.requireAdmin(api.handleAdminCategories))

@@ -1,22 +1,32 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
   CheckCircle2,
+  Clock,
   Lock,
   LogOut,
   Mail,
+  MapPin,
   Monitor,
   Save,
   ShieldCheck,
+  Trash2,
   User as UserIcon,
   UserCog,
 } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
-import { changePassword, revokeOtherSessions, updateProfile } from '@/lib/auth';
+import {
+  changePassword,
+  listUserSessions,
+  revokeOtherSessions,
+  revokeUserSession,
+  updateProfile,
+  type UserSession,
+} from '@/lib/auth';
 import styles from './page.module.css';
 
 type TabId = 'profile' | 'security' | 'sessions';
@@ -46,6 +56,22 @@ function getInitial(name: string): string {
   return trimmed.charAt(0).toUpperCase();
 }
 
+function parseUA(ua: string): string {
+  if (!ua) return '未知设备';
+  let browser = 'Unknown';
+  let os = 'Unknown';
+  if (/Edg\//.test(ua)) browser = 'Edge';
+  else if (/Chrome\//.test(ua) && !/Chromium\//.test(ua)) browser = 'Chrome';
+  else if (/Firefox\//.test(ua)) browser = 'Firefox';
+  else if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) browser = 'Safari';
+  if (/Windows NT/.test(ua)) os = 'Windows';
+  else if (/Macintosh/.test(ua)) os = 'macOS';
+  else if (/Android/.test(ua)) os = 'Android';
+  else if (/iPhone|iPad/.test(ua)) os = 'iOS';
+  else if (/Linux/.test(ua)) os = 'Linux';
+  return `${browser} · ${os}`;
+}
+
 export default function AccountPage() {
   const router = useRouter();
   const { user, token, isLoading, isAuthenticated, signOut, updateUser } = useAuth();
@@ -67,12 +93,34 @@ export default function AccountPage() {
   // Session actions
   const [sessionBusy, setSessionBusy] = useState<'revoke' | 'logout' | null>(null);
   const [sessionMessage, setSessionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [sessions, setSessions] = useState<UserSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [revokingToken, setRevokingToken] = useState<string | null>(null);
+
+  const fetchSessions = useCallback(async () => {
+    if (!token) return;
+    setSessionsLoading(true);
+    try {
+      const data = await listUserSessions(token);
+      setSessions(data);
+    } catch {
+      // silently ignore
+    } finally {
+      setSessionsLoading(false);
+    }
+  }, [token]);
 
   useEffect(() => {
     if (user) {
       setDisplayName(user.displayName);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (activeTab === 'sessions') {
+      fetchSessions();
+    }
+  }, [activeTab, fetchSessions]);
 
   const initial = useMemo(() => (user ? getInitial(user.displayName) : '?'), [user]);
   const roleLabel = user ? ROLE_LABELS[user.role] ?? user.role : '';
@@ -181,11 +229,26 @@ export default function AccountPage() {
           text: `已退出 ${result.revokedSessions} 个其他设备的登录会话。`,
         });
       }
+      await fetchSessions();
     } catch (err) {
       const text = err instanceof Error ? err.message : '操作失败，请稍后重试';
       setSessionMessage({ type: 'error', text });
     } finally {
       setSessionBusy(null);
+    }
+  };
+
+  const handleRevokeOne = async (accessToken: string) => {
+    if (!token) return;
+    setRevokingToken(accessToken);
+    try {
+      await revokeUserSession(token, accessToken);
+      await fetchSessions();
+    } catch (err) {
+      const text = err instanceof Error ? err.message : '撤销失败，请稍后重试';
+      setSessionMessage({ type: 'error', text });
+    } finally {
+      setRevokingToken(null);
     }
   };
 
@@ -500,21 +563,65 @@ export default function AccountPage() {
               SESSIONS // <span className={styles.panelTitleAccent}>ACTIVE</span>
             </header>
             <div className={styles.panelBody}>
-              <div className={styles.sessionCard}>
-                <div className={styles.sessionCardLeft}>
-                  <div className={styles.sessionIcon}>
-                    <Monitor size={18} />
-                  </div>
-                  <div>
-                    <div className={styles.sessionTitle}>当前设备</div>
-                    <div className={styles.sessionDesc}>SESSION · {tokenPreview}</div>
-                  </div>
+              {sessionsLoading ? (
+                <div className={styles.sessionsLoading}>
+                  <span className={styles.spinner} style={{ borderTopColor: 'var(--color-cta)' }} />
+                  <span>加载会话列表…</span>
                 </div>
-                <span className={styles.statusPill}>
-                  <span className={styles.statusDot} />
-                  ACTIVE
-                </span>
-              </div>
+              ) : sessions.length === 0 ? (
+                <div className={styles.sessionsEmpty}>暂无活跃会话数据</div>
+              ) : (
+                <div className={styles.sessionList}>
+                  {sessions.map((sess) => (
+                    <div
+                      key={sess.accessToken}
+                      className={`${styles.sessionCard} ${sess.isCurrent ? styles.sessionCardCurrent : ''}`}
+                    >
+                      <div className={styles.sessionCardLeft}>
+                        <div className={styles.sessionIcon}>
+                          <Monitor size={18} />
+                        </div>
+                        <div>
+                          <div className={styles.sessionTitle}>
+                            {parseUA(sess.userAgent)}
+                            {sess.isCurrent && (
+                              <span className={styles.currentBadge}>当前</span>
+                            )}
+                          </div>
+                          <div className={styles.sessionMeta}>
+                            {sess.ipAddress && (
+                              <span><MapPin size={10} /> {sess.ipAddress}</span>
+                            )}
+                            <span><Clock size={10} /> 活跃 {formatDate(sess.lastActiveAt)}</span>
+                            <span className={styles.sessionToken}>{sess.tokenPreview}</span>
+                          </div>
+                        </div>
+                      </div>
+                      {!sess.isCurrent && (
+                        <button
+                          type="button"
+                          className={styles.btnRevokeSmall}
+                          disabled={revokingToken === sess.accessToken || sessionBusy !== null}
+                          onClick={() => handleRevokeOne(sess.accessToken)}
+                        >
+                          {revokingToken === sess.accessToken ? (
+                            <span className={styles.spinner} style={{ borderTopColor: '#fecaca' }} />
+                          ) : (
+                            <Trash2 size={13} />
+                          )}
+                          撤销
+                        </button>
+                      )}
+                      {sess.isCurrent && (
+                        <span className={styles.statusPill}>
+                          <span className={styles.statusDot} />
+                          ACTIVE
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {sessionMessage && (
                 <div
@@ -533,7 +640,7 @@ export default function AccountPage() {
                   type="button"
                   className={styles.btnGhost}
                   onClick={handleRevokeOthers}
-                  disabled={sessionBusy !== null}
+                  disabled={sessionBusy !== null || revokingToken !== null}
                 >
                   {sessionBusy === 'revoke' ? (
                     <>
@@ -551,7 +658,7 @@ export default function AccountPage() {
                   type="button"
                   className={styles.btnDanger}
                   onClick={handleSignOut}
-                  disabled={sessionBusy !== null}
+                  disabled={sessionBusy !== null || revokingToken !== null}
                 >
                   {sessionBusy === 'logout' ? (
                     <>

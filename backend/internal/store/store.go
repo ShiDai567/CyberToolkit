@@ -28,6 +28,7 @@ type Store interface {
 	UpdateUserProfile(userID string, displayName string) (domain.User, error)
 	UpdateUserPassword(userID, currentPassword, newPassword string) error
 	RevokeUserSessions(userID string, exceptToken string) (int, error)
+	ListUserSessions(userID string) ([]domain.Session, error)
 
 	// Admin: user management
 	ListUsers(page, pageSize int) ([]domain.User, int)
@@ -48,7 +49,4 @@ type Store interface {
 	// Admin: session management
 	ListSessions(page, pageSize int) ([]domain.Session, int)
 	RevokeSession(accessToken string) error
-
-	// User session tracking
-	UpdateSessionLastActive(token, ip, userAgent string)
 }
