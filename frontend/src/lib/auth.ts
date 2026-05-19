@@ -1,5 +1,6 @@
 ﻿export interface AuthUser {
   id: string;
+  username: string;
   email: string;
   displayName: string;
   role: string;
@@ -105,13 +106,13 @@ interface AuthResponse {
   data: AuthSession;
 }
 
-export async function login(email: string, password: string): Promise<AuthSession> {
-  const payload = await postAuthJSON<AuthResponse>('/api/v1/auth/login', { email, password });
+export async function login(account: string, password: string): Promise<AuthSession> {
+  const payload = await postAuthJSON<AuthResponse>('/api/v1/auth/login', { account, password });
   return payload.data;
 }
 
-export async function register(email: string, password: string, displayName: string): Promise<AuthSession> {
-  const payload = await postAuthJSON<AuthResponse>('/api/v1/auth/register', { email, password, displayName });
+export async function register(username: string, email: string, password: string, confirmPassword: string, displayName: string): Promise<AuthSession> {
+  const payload = await postAuthJSON<AuthResponse>('/api/v1/auth/register', { username, email, password, confirmPassword, displayName });
   return payload.data;
 }
 

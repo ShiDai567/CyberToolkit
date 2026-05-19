@@ -3,10 +3,17 @@ package http
 import (
 	"net/http"
 	"net/mail"
+	"regexp"
 	"strings"
 
 	"cybertoolkit/backend/internal/domain"
 )
+
+var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9_]{3,30}$`)
+
+func validateUsername(username string) bool {
+	return usernameRe.MatchString(username)
+}
 
 func validateEmail(email string) bool {
 	addr, err := mail.ParseAddress(email)
@@ -24,22 +31,22 @@ func (api *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var request struct {
-		Email    string `json:"email"`
+		Account  string `json:"account"`
 		Password string `json:"password"`
 	}
 	if err := decodeJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_JSON", "invalid request body", nil)
 		return
 	}
-	request.Email = strings.TrimSpace(request.Email)
-	if request.Email == "" || request.Password == "" {
-		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "email and password are required", nil)
+	request.Account = strings.TrimSpace(request.Account)
+	if request.Account == "" || request.Password == "" {
+		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "account and password are required", nil)
 		return
 	}
 
 	ip := getClientIP(r)
 	userAgent := r.UserAgent()
-	accessToken, refreshToken, user, err := api.store.Authenticate(request.Email, request.Password, ip, userAgent)
+	accessToken, refreshToken, user, err := api.store.Authenticate(request.Account, request.Password, ip, userAgent)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", err.Error(), nil)
 		return
@@ -59,18 +66,25 @@ func (api *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var request struct {
-		Email       string `json:"email"`
-		Password    string `json:"password"`
-		DisplayName string `json:"displayName"`
+		Username        string `json:"username"`
+		Email           string `json:"email"`
+		Password        string `json:"password"`
+		ConfirmPassword string `json:"confirmPassword"`
+		DisplayName     string `json:"displayName"`
 	}
 	if err := decodeJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_JSON", "invalid request body", nil)
 		return
 	}
+	request.Username = strings.TrimSpace(request.Username)
 	request.Email = strings.TrimSpace(request.Email)
 	request.DisplayName = strings.TrimSpace(request.DisplayName)
-	if request.Email == "" || request.Password == "" || request.DisplayName == "" {
-		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "email, password and displayName are required", nil)
+	if request.Username == "" || request.Email == "" || request.Password == "" || request.ConfirmPassword == "" || request.DisplayName == "" {
+		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "username, email, password, confirmPassword and displayName are required", nil)
+		return
+	}
+	if !validateUsername(request.Username) {
+		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "username must be 3-30 characters, only letters, digits and underscores", nil)
 		return
 	}
 	if !validateEmail(request.Email) {
@@ -81,6 +95,10 @@ func (api *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "password must be at least 6 characters", nil)
 		return
 	}
+	if request.Password != request.ConfirmPassword {
+		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "passwords do not match", nil)
+		return
+	}
 	if len(request.DisplayName) < 2 || len(request.DisplayName) > 32 {
 		writeError(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "displayName must be between 2 and 32 characters", nil)
 		return
@@ -88,7 +106,7 @@ func (api *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	ip := getClientIP(r)
 	userAgent := r.UserAgent()
-	accessToken, refreshToken, user, err := api.store.Register(request.Email, request.Password, request.DisplayName, ip, userAgent)
+	accessToken, refreshToken, user, err := api.store.Register(request.Username, request.Email, request.Password, request.DisplayName, ip, userAgent)
 	if err != nil {
 		writeError(w, http.StatusConflict, "REGISTER_ERROR", err.Error(), nil)
 		return

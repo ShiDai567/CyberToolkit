@@ -19,8 +19,8 @@ type Store interface {
 	RelatedTools(categoryID, exceptToolID string, limit int) []domain.Tool
 	ReplaceToolTags(toolID string, tagNames []string)
 	CreateSubmission(submission domain.Submission) domain.Submission
-	Authenticate(email, password, ip, userAgent string) (string, string, domain.User, error)
-	Register(email, password, displayName, ip, userAgent string) (string, string, domain.User, error)
+	Authenticate(account, password, ip, userAgent string) (string, string, domain.User, error)
+	Register(username, email, password, displayName, ip, userAgent string) (string, string, domain.User, error)
 	ValidateSession(token string) (domain.User, bool)
 	DeleteSession(token string)
 	RefreshSession(refreshToken, ip, userAgent string) (string, string, domain.User, error)

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Mail, Lock, Shield, AlertCircle } from 'lucide-react';
+import { AtSign, Lock, Shield, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { login } from '@/lib/auth';
 import styles from './page.module.css';
@@ -13,10 +13,10 @@ export default function LoginPage() {
   const { signIn, isAuthenticated } = useAuth();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const [email, setEmail] = useState('');
+  const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ account?: string; password?: string }>({});
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -75,11 +75,9 @@ export default function LoginPage() {
   }, []);
 
   const validate = (): boolean => {
-    const errors: { email?: string; password?: string } = {};
-    if (!email.trim()) {
-      errors.email = '请输入邮箱地址';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      errors.email = '邮箱格式不正确';
+    const errors: { account?: string; password?: string } = {};
+    if (!account.trim()) {
+      errors.account = '请输入用户ID或邮箱';
     }
     if (!password) {
       errors.password = '请输入密码';
@@ -96,7 +94,7 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const session = await login(email, password);
+      const session = await login(account.trim(), password);
       signIn(session);
       router.replace('/');
     } catch (err) {
@@ -152,21 +150,21 @@ export default function LoginPage() {
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
             <div className={styles.field}>
               <label className={styles.label}>
-                <span className={styles.labelPrompt}>{'>'}</span> EMAIL
+                <span className={styles.labelPrompt}>{'>'}</span> ACCOUNT
               </label>
               <div className={styles.inputWrapper}>
-                <Mail className={styles.inputIcon} />
+                <AtSign className={styles.inputIcon} />
                 <input
-                  type="email"
-                  className={`${styles.input} ${fieldErrors.email ? styles.inputError : ''}`}
-                  placeholder="user@example.com"
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); setFieldErrors((f) => ({ ...f, email: undefined })); }}
-                  autoComplete="email"
+                  type="text"
+                  className={`${styles.input} ${fieldErrors.account ? styles.inputError : ''}`}
+                  placeholder="用户ID 或 邮箱"
+                  value={account}
+                  onChange={(e) => { setAccount(e.target.value); setFieldErrors((f) => ({ ...f, account: undefined })); }}
+                  autoComplete="username"
                   autoFocus
                 />
               </div>
-              <span className={styles.errorMsg}>{fieldErrors.email}</span>
+              <span className={styles.errorMsg}>{fieldErrors.account}</span>
             </div>
 
             <div className={styles.field}>

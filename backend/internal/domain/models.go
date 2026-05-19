@@ -98,6 +98,7 @@ type AuditLog struct {
 
 type User struct {
 	ID           string     `json:"id"`
+	Username     string     `json:"username"`
 	Email        string     `json:"email"`
 	DisplayName  string     `json:"displayName"`
 	PasswordHash string     `json:"-"`

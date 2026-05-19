@@ -100,10 +100,16 @@ func (s *Store) ensureAdmin(ctx context.Context) error {
 		return nil
 	}
 
+	// Derive username from email (part before @)
+	adminUsername := email
+	if idx := strings.Index(email, "@"); idx > 0 {
+		adminUsername = email[:idx]
+	}
+
 	_, err = s.pool.Exec(ctx,
-		`INSERT INTO users (email, password_hash, display_name, role, created_at, updated_at)
-		 VALUES ($1, $2, $3, 'admin', $4, $4)`,
-		email, hashPassword(password), displayName, now,
+		`INSERT INTO users (username, email, password_hash, display_name, role, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, 'admin', $5, $5)`,
+		adminUsername, email, hashPassword(password), displayName, now,
 	)
 	return err
 }
@@ -204,13 +210,14 @@ func (s *Store) seed(ctx context.Context) error {
 	}
 
 	users := []struct {
+		Username    string
 		Email       string
 		Password    string
 		DisplayName string
 		Role        string
 	}{
-		{Email: "editor@cybertoolkit.local", Password: "editor123456", DisplayName: "Editor Demo", Role: "editor"},
-		{Email: "viewer@cybertoolkit.local", Password: "viewer123456", DisplayName: "Viewer Demo", Role: "viewer"},
+		{Username: "editor", Email: "editor@cybertoolkit.local", Password: "editor123456", DisplayName: "Editor Demo", Role: "editor"},
+		{Username: "viewer", Email: "viewer@cybertoolkit.local", Password: "viewer123456", DisplayName: "Viewer Demo", Role: "viewer"},
 	}
 
 	// Insert categories and collect IDs by slug
@@ -282,9 +289,9 @@ func (s *Store) seed(ctx context.Context) error {
 	// Insert users
 	for _, u := range users {
 		_, err := s.pool.Exec(ctx,
-			`INSERT INTO users (email, password_hash, display_name, role, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, $5)`,
-			u.Email, hashPassword(u.Password), u.DisplayName, u.Role, now,
+			`INSERT INTO users (username, email, password_hash, display_name, role, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $6)`,
+			u.Username, u.Email, hashPassword(u.Password), u.DisplayName, u.Role, now,
 		)
 		if err != nil {
 			return fmt.Errorf("seed user %s: %w", u.Email, err)
@@ -668,18 +675,24 @@ func sessKey(token string) string    { return "sess:" + token }
 func refreshKey(token string) string { return "refresh:" + token }
 func userSessKey(userID string) string { return "user_sessions:" + userID }
 
-func (s *Store) Authenticate(email, password, ip, userAgent string) (string, string, domain.User, error) {
+func (s *Store) Authenticate(account, password, ip, userAgent string) (string, string, domain.User, error) {
 	ctx := context.Background()
 	var user domain.User
-	err := s.pool.QueryRow(ctx,
-		`SELECT id::text, email, display_name, password_hash, role, is_active, last_login_at, created_at FROM users WHERE email = $1 AND is_active = true`,
-		email,
-	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.PasswordHash, &user.Role, &user.IsActive, &user.LastLoginAt, &user.CreatedAt)
+
+	// If account contains '@', treat as email; otherwise treat as username
+	var query string
+	if strings.Contains(account, "@") {
+		query = `SELECT id::text, username, email, display_name, password_hash, role, is_active, last_login_at, created_at FROM users WHERE email = $1 AND is_active = true`
+	} else {
+		query = `SELECT id::text, username, email, display_name, password_hash, role, is_active, last_login_at, created_at FROM users WHERE username = $1 AND is_active = true`
+	}
+
+	err := s.pool.QueryRow(ctx, query, account).Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.PasswordHash, &user.Role, &user.IsActive, &user.LastLoginAt, &user.CreatedAt)
 	if err != nil {
-		return "", "", domain.User{}, errors.New("invalid email or password")
+		return "", "", domain.User{}, errors.New("invalid username/email or password")
 	}
 	if user.PasswordHash != hashPassword(password) {
-		return "", "", domain.User{}, errors.New("invalid email or password")
+		return "", "", domain.User{}, errors.New("invalid username/email or password")
 	}
 
 	accessToken, err := randomToken()
@@ -701,10 +714,16 @@ func (s *Store) Authenticate(email, password, ip, userAgent string) (string, str
 	return accessToken, refreshToken, publicUser(user), nil
 }
 
-func (s *Store) Register(email, password, displayName, ip, userAgent string) (string, string, domain.User, error) {
+func (s *Store) Register(username, email, password, displayName, ip, userAgent string) (string, string, domain.User, error) {
 	ctx := context.Background()
 
 	var exists int
+	_ = s.pool.QueryRow(ctx, `SELECT 1 FROM users WHERE username = $1`, username).Scan(&exists)
+	if exists == 1 {
+		return "", "", domain.User{}, errors.New("username already taken")
+	}
+
+	exists = 0
 	_ = s.pool.QueryRow(ctx, `SELECT 1 FROM users WHERE email = $1`, email).Scan(&exists)
 	if exists == 1 {
 		return "", "", domain.User{}, errors.New("email already registered")
@@ -713,16 +732,16 @@ func (s *Store) Register(email, password, displayName, ip, userAgent string) (st
 	now := time.Now().UTC()
 	var id string
 	err := s.pool.QueryRow(ctx,
-		`INSERT INTO users (email, password_hash, display_name, role, created_at, updated_at)
-		 VALUES ($1, $2, $3, 'viewer', $4, $4) RETURNING id::text`,
-		email, hashPassword(password), displayName, now,
+		`INSERT INTO users (username, email, password_hash, display_name, role, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, 'viewer', $5, $5) RETURNING id::text`,
+		username, email, hashPassword(password), displayName, now,
 	).Scan(&id)
 	if err != nil {
 		return "", "", domain.User{}, err
 	}
 
 	user := domain.User{
-		ID: id, Email: email, DisplayName: displayName,
+		ID: id, Username: username, Email: email, DisplayName: displayName,
 		Role: "viewer", IsActive: true, CreatedAt: now,
 	}
 
@@ -788,9 +807,9 @@ func (s *Store) ValidateSession(token string) (domain.User, bool) {
 	userID := data["user_id"]
 	var user domain.User
 	err = s.pool.QueryRow(ctx,
-		`SELECT id::text, email, display_name, role, is_active, created_at FROM users WHERE id = $1 AND is_active = true`,
+		`SELECT id::text, username, email, display_name, role, is_active, created_at FROM users WHERE id = $1 AND is_active = true`,
 		userID,
-	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
 	if err != nil {
 		return domain.User{}, false
 	}
@@ -837,9 +856,9 @@ func (s *Store) RefreshSession(refreshToken, ip, userAgent string) (string, stri
 	userID := data["user_id"]
 	var user domain.User
 	err = s.pool.QueryRow(ctx,
-		`SELECT id::text, email, display_name, role, is_active, created_at FROM users WHERE id = $1 AND is_active = true`,
+		`SELECT id::text, username, email, display_name, role, is_active, created_at FROM users WHERE id = $1 AND is_active = true`,
 		userID,
-	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
 	if err != nil {
 		return "", "", domain.User{}, errors.New("user not found")
 	}
@@ -1049,9 +1068,9 @@ func (s *Store) FindUserByEmail(email string) (domain.User, bool) {
 	ctx := context.Background()
 	var user domain.User
 	err := s.pool.QueryRow(ctx,
-		`SELECT id::text, email, display_name, role, is_active, created_at FROM users WHERE email = $1`,
+		`SELECT id::text, username, email, display_name, role, is_active, created_at FROM users WHERE email = $1`,
 		email,
-	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
 	if err != nil {
 		return domain.User{}, false
 	}
@@ -1063,9 +1082,9 @@ func (s *Store) UpdateUserProfile(userID string, displayName string) (domain.Use
 	var user domain.User
 	err := s.pool.QueryRow(ctx,
 		`UPDATE users SET display_name = $1, updated_at = now() WHERE id = $2 AND is_active = true
-		 RETURNING id::text, email, display_name, role, is_active, created_at`,
+		 RETURNING id::text, username, email, display_name, role, is_active, created_at`,
 		displayName, userID,
-	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
 	if err != nil {
 		return domain.User{}, errors.New("user not found")
 	}
@@ -1161,7 +1180,7 @@ func (s *Store) ListUsers(page, pageSize int) ([]domain.User, int) {
 
 	offset := (page - 1) * pageSize
 	rows, err := s.pool.Query(ctx,
-		`SELECT id::text, email, display_name, role, is_active, last_login_at, created_at FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+		`SELECT id::text, username, email, display_name, role, is_active, last_login_at, created_at FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
 		pageSize, offset,
 	)
 	if err != nil {
@@ -1172,7 +1191,7 @@ func (s *Store) ListUsers(page, pageSize int) ([]domain.User, int) {
 	var out []domain.User
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.DisplayName, &u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt); err != nil {
 			continue
 		}
 		out = append(out, publicUser(u))
@@ -1185,9 +1204,9 @@ func (s *Store) UpdateUserRole(userID, role string) (domain.User, error) {
 	var user domain.User
 	err := s.pool.QueryRow(ctx,
 		`UPDATE users SET role = $1, updated_at = now() WHERE id = $2
-		 RETURNING id::text, email, display_name, role, is_active, created_at`,
+		 RETURNING id::text, username, email, display_name, role, is_active, created_at`,
 		role, userID,
-	).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Role, &user.IsActive, &user.CreatedAt)
 	if err != nil {
 		return domain.User{}, errors.New("user not found")
 	}

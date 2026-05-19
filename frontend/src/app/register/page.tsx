@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Mail, Lock, User, Shield, AlertCircle } from 'lucide-react';
+import { Mail, Lock, User, IdCard, Shield, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { register } from '@/lib/auth';
 import styles from './page.module.css';
@@ -13,11 +13,13 @@ export default function RegisterPage() {
   const { signIn, isAuthenticated } = useAuth();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<{ displayName?: string; email?: string; password?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ username?: string; displayName?: string; email?: string; password?: string; confirmPassword?: string }>({});
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -76,13 +78,18 @@ export default function RegisterPage() {
   }, []);
 
   const validate = (): boolean => {
-    const errors: { displayName?: string; email?: string; password?: string } = {};
+    const errors: { username?: string; displayName?: string; email?: string; password?: string; confirmPassword?: string } = {};
+    if (!username.trim()) {
+      errors.username = '请输入用户名';
+    } else if (!/^[a-zA-Z0-9_]{3,30}$/.test(username.trim())) {
+      errors.username = '3-30个字符，仅支持字母、数字和下划线';
+    }
     if (!displayName.trim()) {
-      errors.displayName = '请输入显示名称';
+      errors.displayName = '请输入昵称';
     } else if (displayName.trim().length < 2) {
-      errors.displayName = '名称至少2个字符';
+      errors.displayName = '昵称至少2个字符';
     } else if (displayName.trim().length > 32) {
-      errors.displayName = '名称不超过32个字符';
+      errors.displayName = '昵称不超过32个字符';
     }
     if (!email.trim()) {
       errors.email = '请输入邮箱地址';
@@ -93,6 +100,11 @@ export default function RegisterPage() {
       errors.password = '请输入密码';
     } else if (password.length < 6) {
       errors.password = '密码至少6个字符';
+    }
+    if (!confirmPassword) {
+      errors.confirmPassword = '请确认密码';
+    } else if (password !== confirmPassword) {
+      errors.confirmPassword = '两次密码不一致';
     }
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -106,7 +118,7 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      const session = await register(email, password, displayName.trim());
+      const session = await register(username.trim(), email, password, confirmPassword, displayName.trim());
       signIn(session);
       router.replace('/');
     } catch (err) {
@@ -137,14 +149,6 @@ export default function RegisterPage() {
         </div>
 
         <div className={styles.terminalBody}>
-          <pre className={styles.asciiHeader}>{`
-██████╗  ██████╗ ███████╗███╗   ██╗
-██╔══██╗██╔═══██╗██╔════╝████╗  ██║
-██████╔╝██║   ██║███████╗██╔██╗ ██║
-██╔══██╗██║   ██║╚════██║██║╚██╗██║
-██║  ██║╚██████╔╝███████║██║ ╚████║
-╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝`}</pre>
-
           <h1 className={styles.heading}>
             身份<span className={styles.headingAccent}>注册</span>
           </h1>
@@ -162,18 +166,36 @@ export default function RegisterPage() {
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
             <div className={styles.field}>
               <label className={styles.label}>
-                <span className={styles.labelPrompt}>{'>'}</span> DISPLAY_NAME
+                <span className={styles.labelPrompt}>{'>'}</span> USERNAME
+              </label>
+              <div className={styles.inputWrapper}>
+                <IdCard className={styles.inputIcon} />
+                <input
+                  type="text"
+                  className={`${styles.input} ${fieldErrors.username ? styles.inputError : ''}`}
+                  placeholder="你的用户ID"
+                  value={username}
+                  onChange={(e) => { setUsername(e.target.value); setFieldErrors((f) => ({ ...f, username: undefined })); }}
+                  autoComplete="username"
+                  autoFocus
+                />
+              </div>
+              <span className={styles.errorMsg}>{fieldErrors.username}</span>
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label}>
+                <span className={styles.labelPrompt}>{'>'}</span> NICKNAME
               </label>
               <div className={styles.inputWrapper}>
                 <User className={styles.inputIcon} />
                 <input
                   type="text"
                   className={`${styles.input} ${fieldErrors.displayName ? styles.inputError : ''}`}
-                  placeholder="你的代号"
+                  placeholder="你的昵称"
                   value={displayName}
                   onChange={(e) => { setDisplayName(e.target.value); setFieldErrors((f) => ({ ...f, displayName: undefined })); }}
                   autoComplete="name"
-                  autoFocus
                 />
               </div>
               <span className={styles.errorMsg}>{fieldErrors.displayName}</span>
@@ -213,9 +235,24 @@ export default function RegisterPage() {
                 />
               </div>
               <span className={styles.errorMsg}>{fieldErrors.password}</span>
-              {!fieldErrors.password && (
-                <span className={styles.passwordHint}>密码至少6个字符</span>
-              )}
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label}>
+                <span className={styles.labelPrompt}>{'>'}</span> CONFIRM_PASSWORD
+              </label>
+              <div className={styles.inputWrapper}>
+                <Lock className={styles.inputIcon} />
+                <input
+                  type="password"
+                  className={`${styles.input} ${fieldErrors.confirmPassword ? styles.inputError : ''}`}
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => { setConfirmPassword(e.target.value); setFieldErrors((f) => ({ ...f, confirmPassword: undefined })); }}
+                  autoComplete="new-password"
+                />
+              </div>
+              <span className={styles.errorMsg}>{fieldErrors.confirmPassword}</span>
             </div>
 
             <button
