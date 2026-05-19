@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AtSign, Lock, Shield, AlertCircle } from 'lucide-react';
+import { AtSign, Lock, Shield } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
 import { login } from '@/lib/auth';
 import styles from './page.module.css';
@@ -15,7 +16,6 @@ export default function LoginPage() {
 
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<{ account?: string; password?: string }>({});
   const [loading, setLoading] = useState(false);
 
@@ -88,7 +88,6 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setError('');
 
     if (!validate()) return;
 
@@ -99,7 +98,7 @@ export default function LoginPage() {
       router.replace('/');
     } catch (err) {
       const message = err instanceof Error ? err.message : '登录失败，请重试';
-      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -139,13 +138,6 @@ export default function LoginPage() {
           <p className={styles.subheading}>
             验证身份以访问安全工具库
           </p>
-
-          {error && (
-            <div className={styles.globalError}>
-              <AlertCircle size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />
-              {error}
-            </div>
-          )}
 
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
             <div className={styles.field}>

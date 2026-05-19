@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Mail, Lock, User, IdCard, Shield, AlertCircle } from 'lucide-react';
+import { Mail, Lock, User, IdCard, Shield } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
 import { register } from '@/lib/auth';
 import styles from './page.module.css';
@@ -18,7 +19,6 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<{ username?: string; displayName?: string; email?: string; password?: string; confirmPassword?: string }>({});
   const [loading, setLoading] = useState(false);
 
@@ -112,7 +112,6 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setError('');
 
     if (!validate()) return;
 
@@ -120,10 +119,11 @@ export default function RegisterPage() {
     try {
       const session = await register(username.trim(), email, password, confirmPassword, displayName.trim());
       signIn(session);
+      toast.success('注册成功');
       router.replace('/');
     } catch (err) {
       const message = err instanceof Error ? err.message : '注册失败，请重试';
-      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -155,13 +155,6 @@ export default function RegisterPage() {
           <p className={styles.subheading}>
             创建新身份以获取安全工具库访问权限
           </p>
-
-          {error && (
-            <div className={styles.globalError}>
-              <AlertCircle size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />
-              {error}
-            </div>
-          )}
 
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
             <div className={styles.field}>

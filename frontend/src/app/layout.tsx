@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Toaster } from 'sonner';
 import './globals.css';
 import { Navbar } from '@/components/Navbar';
 import { AuthProvider } from '@/components/AuthProvider';
@@ -22,6 +23,12 @@ export default function RootLayout({
         <AuthProvider>
           <NavbarWrapper />
           {children}
+          <Toaster
+            position="top-center"
+            richColors
+            closeButton={false}
+            theme="dark"
+          />
         </AuthProvider>
       </body>
     </html>

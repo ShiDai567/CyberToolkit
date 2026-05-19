@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
 import {
   AdminCategory,
@@ -33,8 +34,6 @@ export default function AdminCategoriesPage() {
   const { token } = useAuth();
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -49,12 +48,11 @@ export default function AdminCategoriesPage() {
   const fetchCategories = useCallback(async () => {
     if (!token) return;
     setLoading(true);
-    setError(null);
     try {
       const data = await getAdminCategories(token);
       setCategories(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载分类失败');
+      toast.error(err instanceof Error ? err.message : '加载分类失败');
     } finally {
       setLoading(false);
     }
@@ -63,13 +61,6 @@ export default function AdminCategoriesPage() {
   useEffect(() => {
     void fetchCategories();
   }, [fetchCategories]);
-
-  // Auto-clear success message
-  useEffect(() => {
-    if (!success) return;
-    const timer = setTimeout(() => setSuccess(null), 3000);
-    return () => clearTimeout(timer);
-  }, [success]);
 
   /* ── Visibility toggle ── */
   const handleToggleVisibility = async (cat: AdminCategory) => {
@@ -82,9 +73,9 @@ export default function AdminCategoriesPage() {
       setCategories((prev) =>
         prev.map((c) => (c.id === cat.id ? updated : c)),
       );
-      setSuccess(`已${updated.isVisible ? '显示' : '隐藏'} "${cat.name}"`);
+      toast.success(`已${updated.isVisible ? '显示' : '隐藏'} "${cat.name}"`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '更新可见性失败');
+      toast.error(err instanceof Error ? err.message : '更新可见性失败');
     } finally {
       setTogglingId(null);
     }
@@ -120,22 +111,21 @@ export default function AdminCategoriesPage() {
   const handleSave = async () => {
     if (!token) return;
     setSaving(true);
-    setError(null);
     try {
       if (editingId) {
         const updated = await updateCategory(token, editingId, form);
         setCategories((prev) =>
           prev.map((c) => (c.id === editingId ? updated : c)),
         );
-        setSuccess(`分类 "${updated.name}" 已更新`);
+        toast.success(`分类 "${updated.name}" 已更新`);
       } else {
         const created = await createCategory(token, form);
         setCategories((prev) => [...prev, created]);
-        setSuccess(`分类 "${created.name}" 已创建`);
+        toast.success(`分类 "${created.name}" 已创建`);
       }
       closeModal();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败');
+      toast.error(err instanceof Error ? err.message : '保存失败');
     } finally {
       setSaving(false);
     }
@@ -149,9 +139,9 @@ export default function AdminCategoriesPage() {
     try {
       await deleteCategory(token, cat.id);
       setCategories((prev) => prev.filter((c) => c.id !== cat.id));
-      setSuccess(`分类 "${cat.name}" 已删除`);
+      toast.success(`分类 "${cat.name}" 已删除`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '删除失败');
+      toast.error(err instanceof Error ? err.message : '删除失败');
     } finally {
       setDeletingId(null);
     }
@@ -180,16 +170,6 @@ export default function AdminCategoriesPage() {
           </button>
         </div>
       </div>
-
-      {/* Alerts */}
-      {error && (
-        <div className={`${styles.alert} ${styles.alertError}`}>{error}</div>
-      )}
-      {success && (
-        <div className={`${styles.alert} ${styles.alertSuccess}`}>
-          {success}
-        </div>
-      )}
 
       {/* Table */}
       {categories.length === 0 ? (

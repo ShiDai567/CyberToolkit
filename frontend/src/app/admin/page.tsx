@@ -8,6 +8,7 @@ import {
   Users,
   Inbox,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
 import { getAdminStats, type AdminStats } from '@/lib/admin';
 import styles from './page.module.css';
@@ -49,7 +50,6 @@ const QUICK_ACTIONS = [
 export default function AdminDashboardPage() {
   const { token } = useAuth();
   const [stats, setStats] = useState<AdminStats | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -62,11 +62,10 @@ export default function AdminDashboardPage() {
         const data = await getAdminStats(token!);
         if (!cancelled) {
           setStats(data);
-          setError(null);
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : '获取统计数据失败');
+          toast.error(err instanceof Error ? err.message : '获取统计数据失败');
         }
       } finally {
         if (!cancelled) {
@@ -92,9 +91,6 @@ export default function AdminDashboardPage() {
         </h1>
         <p className={styles.headerDesc}>系统运行状态总览</p>
       </div>
-
-      {/* Error */}
-      {error && <div className={styles.errorMsg}>&gt; ERROR: {error}</div>}
 
       {/* Loading skeleton */}
       {loading && (

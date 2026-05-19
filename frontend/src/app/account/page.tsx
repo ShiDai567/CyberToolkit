@@ -4,8 +4,6 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  AlertCircle,
-  CheckCircle2,
   Clock,
   Lock,
   LogOut,
@@ -18,6 +16,7 @@ import {
   User as UserIcon,
   UserCog,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
 import {
   changePassword,
@@ -81,18 +80,15 @@ export default function AccountPage() {
   // Profile form
   const [displayName, setDisplayName] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
-  const [profileMessage, setProfileMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Password form
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordSaving, setPasswordSaving] = useState(false);
-  const [passwordMessage, setPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Session actions
   const [sessionBusy, setSessionBusy] = useState<'revoke' | 'logout' | null>(null);
-  const [sessionMessage, setSessionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [sessions, setSessions] = useState<UserSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [revokingToken, setRevokingToken] = useState<string | null>(null);
@@ -153,15 +149,14 @@ export default function AccountPage() {
 
   const handleProfileSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setProfileMessage(null);
 
     const trimmed = displayName.trim();
     if (trimmed.length < 2 || trimmed.length > 32) {
-      setProfileMessage({ type: 'error', text: '昵称需在 2-32 个字符之间' });
+      toast.error('昵称需在 2-32 个字符之间');
       return;
     }
     if (trimmed === user.displayName) {
-      setProfileMessage({ type: 'error', text: '新昵称与当前一致，无需保存' });
+      toast.info('新昵称与当前一致，无需保存');
       return;
     }
 
@@ -170,10 +165,10 @@ export default function AccountPage() {
       const updated = await updateProfile(token, trimmed);
       updateUser(updated);
       setDisplayName(updated.displayName);
-      setProfileMessage({ type: 'success', text: '昵称已更新' });
+      toast.success('昵称已更新');
     } catch (err) {
       const text = err instanceof Error ? err.message : '更新失败，请稍后重试';
-      setProfileMessage({ type: 'error', text });
+      toast.error(text);
     } finally {
       setProfileSaving(false);
     }
@@ -181,22 +176,21 @@ export default function AccountPage() {
 
   const handlePasswordSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setPasswordMessage(null);
 
     if (!currentPassword) {
-      setPasswordMessage({ type: 'error', text: '请输入当前密码' });
+      toast.error('请输入当前密码');
       return;
     }
     if (newPassword.length < 6) {
-      setPasswordMessage({ type: 'error', text: '新密码至少需要 6 位字符' });
+      toast.error('新密码至少需要 6 位字符');
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPasswordMessage({ type: 'error', text: '两次输入的新密码不一致' });
+      toast.error('两次输入的新密码不一致');
       return;
     }
     if (newPassword === currentPassword) {
-      setPasswordMessage({ type: 'error', text: '新密码不能与当前密码相同' });
+      toast.error('新密码不能与当前密码相同');
       return;
     }
 
@@ -206,33 +200,29 @@ export default function AccountPage() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      const tail = result.revokedSessions > 0 ? `已强制下线 ${result.revokedSessions} 个其他设备会话。` : '';
-      setPasswordMessage({ type: 'success', text: `密码更新成功。${tail}` });
+      const tail = result.revokedSessions > 0 ? ` 已强制下线 ${result.revokedSessions} 个其他设备会话。` : '';
+      toast.success(`密码更新成功${tail}`);
     } catch (err) {
       const text = err instanceof Error ? err.message : '密码更新失败，请稍后重试';
-      setPasswordMessage({ type: 'error', text });
+      toast.error(text);
     } finally {
       setPasswordSaving(false);
     }
   };
 
   const handleRevokeOthers = async () => {
-    setSessionMessage(null);
     setSessionBusy('revoke');
     try {
       const result = await revokeOtherSessions(token, true);
       if (result.revokedSessions === 0) {
-        setSessionMessage({ type: 'success', text: '当前没有其他设备登录。' });
+        toast.info('当前没有其他设备登录。');
       } else {
-        setSessionMessage({
-          type: 'success',
-          text: `已退出 ${result.revokedSessions} 个其他设备的登录会话。`,
-        });
+        toast.success(`已退出 ${result.revokedSessions} 个其他设备的登录会话。`);
       }
       await fetchSessions();
     } catch (err) {
       const text = err instanceof Error ? err.message : '操作失败，请稍后重试';
-      setSessionMessage({ type: 'error', text });
+      toast.error(text);
     } finally {
       setSessionBusy(null);
     }
@@ -246,7 +236,7 @@ export default function AccountPage() {
       await fetchSessions();
     } catch (err) {
       const text = err instanceof Error ? err.message : '撤销失败，请稍后重试';
-      setSessionMessage({ type: 'error', text });
+      toast.error(text);
     } finally {
       setRevokingToken(null);
     }
@@ -391,7 +381,6 @@ export default function AccountPage() {
                       value={displayName}
                       onChange={(e) => {
                         setDisplayName(e.target.value);
-                        setProfileMessage(null);
                       }}
                       placeholder="输入新昵称"
                       maxLength={32}
@@ -400,17 +389,6 @@ export default function AccountPage() {
                   </div>
                   <span className={styles.hint}>2-32 个字符。修改后会立即对全站生效。</span>
                 </div>
-
-                {profileMessage && (
-                  <div
-                    className={`${styles.alert} ${
-                      profileMessage.type === 'success' ? styles.alertSuccess : styles.alertError
-                    }`}
-                  >
-                    {profileMessage.type === 'success' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-                    <span>{profileMessage.text}</span>
-                  </div>
-                )}
 
                 <div className={styles.actions}>
                   <button
@@ -436,7 +414,6 @@ export default function AccountPage() {
                     disabled={profileSaving || !profileDirty}
                     onClick={() => {
                       setDisplayName(user.displayName);
-                      setProfileMessage(null);
                     }}
                   >
                     重置
@@ -470,7 +447,6 @@ export default function AccountPage() {
                       autoComplete="current-password"
                       onChange={(e) => {
                         setCurrentPassword(e.target.value);
-                        setPasswordMessage(null);
                       }}
                       disabled={passwordSaving}
                     />
@@ -491,7 +467,6 @@ export default function AccountPage() {
                       autoComplete="new-password"
                       onChange={(e) => {
                         setNewPassword(e.target.value);
-                        setPasswordMessage(null);
                       }}
                       disabled={passwordSaving}
                     />
@@ -513,23 +488,11 @@ export default function AccountPage() {
                       autoComplete="new-password"
                       onChange={(e) => {
                         setConfirmPassword(e.target.value);
-                        setPasswordMessage(null);
                       }}
                       disabled={passwordSaving}
                     />
                   </div>
                 </div>
-
-                {passwordMessage && (
-                  <div
-                    className={`${styles.alert} ${
-                      passwordMessage.type === 'success' ? styles.alertSuccess : styles.alertError
-                    }`}
-                  >
-                    {passwordMessage.type === 'success' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-                    <span>{passwordMessage.text}</span>
-                  </div>
-                )}
 
                 <div className={styles.actions}>
                   <button type="submit" className={styles.btnPrimary} disabled={passwordSaving}>
@@ -620,18 +583,6 @@ export default function AccountPage() {
                       )}
                     </div>
                   ))}
-                </div>
-              )}
-
-              {sessionMessage && (
-                <div
-                  className={`${styles.alert} ${
-                    sessionMessage.type === 'success' ? styles.alertSuccess : styles.alertError
-                  }`}
-                  style={{ marginTop: 16 }}
-                >
-                  {sessionMessage.type === 'success' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-                  <span>{sessionMessage.text}</span>
                 </div>
               )}
 

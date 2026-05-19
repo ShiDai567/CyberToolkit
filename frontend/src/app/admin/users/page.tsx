@@ -9,6 +9,7 @@ import {
   updateUserRole,
   toggleUserActive,
 } from '@/lib/admin';
+import { toast } from 'sonner';
 import styles from './page.module.css';
 
 const PAGE_SIZE = 20;
@@ -42,8 +43,6 @@ export default function AdminUsersPage() {
   const [meta, setMeta] = useState<PaginationMeta | null>(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   // Track in-flight operations
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
@@ -52,13 +51,12 @@ export default function AdminUsersPage() {
   const fetchUsers = useCallback(async () => {
     if (!token) return;
     setLoading(true);
-    setError(null);
     try {
       const res = await getAdminUsers(token, page, PAGE_SIZE);
       setUsers(res.data);
       setMeta(res.meta);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载用户列表失败');
+      toast.error(err instanceof Error ? err.message : '加载用户列表失败');
     } finally {
       setLoading(false);
     }
@@ -68,13 +66,6 @@ export default function AdminUsersPage() {
     void fetchUsers();
   }, [fetchUsers]);
 
-  // Auto-clear success
-  useEffect(() => {
-    if (!success) return;
-    const timer = setTimeout(() => setSuccess(null), 3000);
-    return () => clearTimeout(timer);
-  }, [success]);
-
   /* ── Role change ── */
   const handleRoleChange = async (u: AdminUser, newRole: string) => {
     if (!token || newRole === u.role) return;
@@ -82,9 +73,9 @@ export default function AdminUsersPage() {
     try {
       const updated = await updateUserRole(token, u.id, newRole);
       setUsers((prev) => prev.map((x) => (x.id === u.id ? updated : x)));
-      setSuccess(`用户 "${u.displayName}" 角色已更新为 ${newRole}`);
+      toast.success(`用户 "${u.displayName}" 角色已更新为 ${newRole}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '更新角色失败');
+      toast.error(err instanceof Error ? err.message : '更新角色失败');
     } finally {
       setUpdatingRoleId(null);
     }
@@ -101,11 +92,11 @@ export default function AdminUsersPage() {
           x.id === u.id ? { ...x, isActive: !x.isActive } : x,
         ),
       );
-      setSuccess(
+      toast.success(
         `用户 "${u.displayName}" 已${u.isActive ? '停用' : '启用'}`,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : '切换状态失败');
+      toast.error(err instanceof Error ? err.message : '切换状态失败');
     } finally {
       setTogglingActiveId(null);
     }
@@ -145,16 +136,6 @@ export default function AdminUsersPage() {
       <div className={styles.header}>
         <h1 className={styles.headerTitle}>&gt; USERS // MANAGEMENT</h1>
       </div>
-
-      {/* Alerts */}
-      {error && (
-        <div className={`${styles.alert} ${styles.alertError}`}>{error}</div>
-      )}
-      {success && (
-        <div className={`${styles.alert} ${styles.alertSuccess}`}>
-          {success}
-        </div>
-      )}
 
       {/* Table */}
       {users.length === 0 ? (

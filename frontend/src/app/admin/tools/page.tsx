@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
 import {
   AdminTool,
@@ -95,7 +96,6 @@ export default function AdminToolsPage() {
   const [meta, setMeta] = useState<PaginationMeta | null>(null);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   // Filters
   const [search, setSearch] = useState('');
@@ -107,15 +107,10 @@ export default function AdminToolsPage() {
   const [editingTool, setEditingTool] = useState<AdminTool | null>(null);
   const [form, setForm] = useState<ToolFormData>(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [modalError, setModalError] = useState('');
-  const [modalSuccess, setModalSuccess] = useState('');
 
   // Archive confirmation
   const [archiveTarget, setArchiveTarget] = useState<AdminTool | null>(null);
   const [archiving, setArchiving] = useState(false);
-
-  // Page-level success message
-  const [pageSuccess, setPageSuccess] = useState('');
 
   // Category lookup map
   const categoryMap = useMemo(() => {
@@ -131,7 +126,6 @@ export default function AdminToolsPage() {
   const fetchTools = useCallback(async () => {
     if (!token) return;
     setLoading(true);
-    setError('');
     try {
       const res = await getAdminTools(token, {
         q: search || undefined,
@@ -142,7 +136,7 @@ export default function AdminToolsPage() {
       setTools(res.data);
       setMeta(res.meta);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载工具列表失败');
+      toast.error(err instanceof Error ? err.message : '加载工具列表失败');
     } finally {
       setLoading(false);
     }
@@ -171,20 +165,11 @@ export default function AdminToolsPage() {
     setPage(1);
   }, [search, statusFilter]);
 
-  // Auto-dismiss page success
-  useEffect(() => {
-    if (!pageSuccess) return;
-    const t = setTimeout(() => setPageSuccess(''), 3000);
-    return () => clearTimeout(t);
-  }, [pageSuccess]);
-
   /* ─── Modal open / close ─── */
 
   function openCreate() {
     setEditingTool(null);
     setForm(emptyForm);
-    setModalError('');
-    setModalSuccess('');
     setModalOpen(true);
   }
 
@@ -204,16 +189,12 @@ export default function AdminToolsPage() {
       githubUrl: tool.githubUrl || '',
       tags: '', // API doesn't return tags on list, user can update if needed
     });
-    setModalError('');
-    setModalSuccess('');
     setModalOpen(true);
   }
 
   function closeModal() {
     setModalOpen(false);
     setEditingTool(null);
-    setModalError('');
-    setModalSuccess('');
   }
 
   /* ─── Form helpers ─── */
@@ -227,8 +208,6 @@ export default function AdminToolsPage() {
   async function handleSave() {
     if (!token) return;
     setSaving(true);
-    setModalError('');
-    setModalSuccess('');
 
     const payload = {
       slug: form.slug.trim(),
@@ -249,7 +228,7 @@ export default function AdminToolsPage() {
     };
 
     if (!payload.name || !payload.slug) {
-      setModalError('名称和 Slug 为必填项');
+      toast.error('名称和 Slug 为必填项');
       setSaving(false);
       return;
     }
@@ -257,18 +236,17 @@ export default function AdminToolsPage() {
     try {
       if (editingTool) {
         await updateTool(token, editingTool.id, payload);
-        setModalSuccess('工具更新成功');
+        toast.success('工具更新成功');
       } else {
         await createTool(token, payload as Parameters<typeof createTool>[1]);
-        setModalSuccess('工具创建成功');
+        toast.success('工具创建成功');
       }
       setTimeout(() => {
         closeModal();
-        setPageSuccess(editingTool ? '工具已更新' : '工具已创建');
         fetchTools();
       }, 600);
     } catch (err) {
-      setModalError(err instanceof Error ? err.message : '保存失败');
+      toast.error(err instanceof Error ? err.message : '保存失败');
     } finally {
       setSaving(false);
     }
@@ -282,10 +260,10 @@ export default function AdminToolsPage() {
     try {
       await archiveTool(token, archiveTarget.id);
       setArchiveTarget(null);
-      setPageSuccess('工具已归档');
+      toast.success('工具已归档');
       fetchTools();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '归档失败');
+      toast.error(err instanceof Error ? err.message : '归档失败');
     } finally {
       setArchiving(false);
     }
@@ -329,20 +307,6 @@ export default function AdminToolsPage() {
             + 新建工具
           </button>
         </div>
-
-        {/* Success alert */}
-        {pageSuccess && (
-          <div className={`${styles.alert} ${styles.alertSuccess}`}>
-            {pageSuccess}
-          </div>
-        )}
-
-        {/* Error alert */}
-        {error && (
-          <div className={`${styles.alert} ${styles.alertError}`}>
-            {error}
-          </div>
-        )}
 
         {/* Toolbar */}
         <div className={styles.toolbar}>
@@ -505,17 +469,6 @@ export default function AdminToolsPage() {
                 &times;
               </button>
             </div>
-
-            {modalError && (
-              <div className={`${styles.alert} ${styles.alertError}`}>
-                {modalError}
-              </div>
-            )}
-            {modalSuccess && (
-              <div className={`${styles.alert} ${styles.alertSuccess}`}>
-                {modalSuccess}
-              </div>
-            )}
 
             {/* Slug + Name */}
             <div className={styles.fieldRow}>
