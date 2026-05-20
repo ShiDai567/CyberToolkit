@@ -8,6 +8,17 @@ import {
   type AdminSubmission,
   type PaginationMeta,
 } from '@/lib/admin';
+import { toast } from 'sonner';
+import {
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  ExternalLink,
+  Github,
+  Globe,
+  Mail,
+  Tag,
+} from 'lucide-react';
 import styles from './page.module.css';
 
 type StatusFilter = '' | 'pending' | 'approved' | 'rejected';
@@ -20,6 +31,13 @@ const FILTERS: { label: string; value: StatusFilter }[] = [
 ];
 
 const PAGE_SIZE = 20;
+
+const DIFFICULTY_LABELS: Record<string, string> = {
+  beginner: '初级',
+  intermediate: '中级',
+  advanced: '高级',
+  expert: '专家',
+};
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
@@ -42,6 +60,79 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`${styles.badge} ${info.cls}`}>{info.text}</span>;
 }
 
+function ToolPayloadCard({ payload }: { payload: Record<string, unknown> }) {
+  const name = (payload.name as string) || '未知工具';
+  const website = (payload.website as string) || '';
+  const github = (payload.github as string) || '';
+  const category = (payload.category as string) || '';
+  const difficulty = (payload.difficulty as string) || '';
+  const shortDesc = (payload.shortDescription as string) || '';
+  const longDesc = (payload.longDescription as string) || '';
+  const tags = (payload.tags as string[]) || [];
+
+  return (
+    <div className={styles.toolCard}>
+      <div className={styles.toolHeader}>
+        <div>
+          <h3 className={styles.toolName}>{name}</h3>
+          {shortDesc && <p className={styles.toolShortDesc}>{shortDesc}</p>}
+        </div>
+      </div>
+
+      {longDesc && (
+        <div className={styles.toolSection}>
+          <h4 className={styles.toolSectionTitle}>详细描述</h4>
+          <p className={styles.toolLongDesc}>{longDesc}</p>
+        </div>
+      )}
+
+      <div className={styles.toolMeta}>
+        {category && (
+          <span className={styles.toolMetaItem}>
+            <span className={styles.toolMetaLabel}>分类:</span> {category}
+          </span>
+        )}
+        {difficulty && (
+          <span className={styles.toolMetaItem}>
+            <span className={styles.toolMetaLabel}>难度:</span>{' '}
+            {DIFFICULTY_LABELS[difficulty] || difficulty}
+          </span>
+        )}
+        {website && (
+          <a
+            href={website}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.toolLink}
+          >
+            <Globe size={12} /> 官网
+          </a>
+        )}
+        {github && (
+          <a
+            href={github}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.toolLink}
+          >
+            <Github size={12} /> GitHub
+          </a>
+        )}
+      </div>
+
+      {tags.length > 0 && (
+        <div className={styles.toolTags}>
+          {tags.map((tag) => (
+            <span key={tag} className={styles.toolTag}>
+              <Tag size={10} /> {tag}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SubmissionCard({
   submission,
   onReviewed,
@@ -58,10 +149,19 @@ function SubmissionCard({
     if (!token || reviewing) return;
     setReviewing(true);
     try {
-      await reviewSubmission(token, submission.id, newStatus, note);
+      const result = await reviewSubmission(token, submission.id, newStatus, note);
       onReviewed();
+      if (newStatus === 'approved') {
+        const toolName = (result as any).createdTool?.name;
+        toast.success(
+          `已通过审核${toolName ? `，工具「${toolName}」已自动发布` : ''}`,
+        );
+      } else {
+        toast.success('已拒绝该投稿');
+      }
     } catch (err) {
-      console.error('Review failed:', err);
+      const msg = err instanceof Error ? err.message : '审核失败';
+      toast.error(msg);
     } finally {
       setReviewing(false);
     }
@@ -71,21 +171,39 @@ function SubmissionCard({
     <div className={styles.card}>
       <div className={styles.cardHeader}>
         <div className={styles.cardMeta}>
-          <span className={styles.cardType}>{submission.type}</span>
+          <span className={styles.cardType}>工具投稿</span>
           {submission.submitterEmail && (
-            <span className={styles.cardEmail}>{submission.submitterEmail}</span>
+            <span className={styles.cardEmail}>
+              <Mail size={10} /> {submission.submitterEmail}
+            </span>
           )}
-          <span className={styles.cardTime}>{formatTime(submission.createdAt)}</span>
+          <span className={styles.cardTime}>
+            <Clock size={10} /> {formatTime(submission.createdAt)}
+          </span>
         </div>
         <StatusBadge status={submission.status} />
       </div>
 
+      {/* Visual tool preview */}
+      {submission.type === 'tool' && submission.payload && (
+        <ToolPayloadCard payload={submission.payload} />
+      )}
+
+      {/* Raw JSON toggle */}
       <button
         className={styles.payloadToggle}
         onClick={() => setExpanded((v) => !v)}
         type="button"
       >
-        {expanded ? '▾ 收起数据' : '▸ 查看数据'}
+        {expanded ? (
+          <>
+            <ChevronUp size={14} /> 收起原始数据
+          </>
+        ) : (
+          <>
+            <ChevronDown size={14} /> 查看原始数据
+          </>
+        )}
       </button>
 
       {expanded && (
@@ -113,7 +231,7 @@ function SubmissionCard({
             disabled={reviewing}
             type="button"
           >
-            ✓ 通过
+            ✓ 通过并发布工具
           </button>
           <button
             className={styles.btnReject}
@@ -123,6 +241,15 @@ function SubmissionCard({
           >
             ✗ 拒绝
           </button>
+        </div>
+      )}
+
+      {submission.status === 'approved' && (submission as any).createdTool && (
+        <div className={styles.approvedToolLink}>
+          <ExternalLink size={12} /> 工具已发布:{' '}
+          <a href={`/tools/${(submission as any).createdTool.id}`} target="_blank">
+            {(submission as any).createdTool.name}
+          </a>
         </div>
       )}
     </div>

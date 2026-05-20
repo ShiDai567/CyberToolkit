@@ -754,7 +754,109 @@ func (api *API) handleAdminSubmissionByID(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error(), nil)
 		return
 	}
-	writeJSON(w, http.StatusOK, submission, nil)
+
+	// If approved and it's a tool submission, create a published tool from the payload
+	var createdTool *domain.Tool
+	if request.Status == "approved" && submission.Type == "tool" {
+		payload := submission.Payload
+		name := strFromPayload(payload, "name", "")
+		website := strFromPayload(payload, "website", "")
+		github := strFromPayload(payload, "github", "")
+		categorySlug := strFromPayload(payload, "category", "")
+		difficulty := strFromPayload(payload, "difficulty", string(domain.DifficultyBeginner))
+		shortDesc := strFromPayload(payload, "shortDescription", "")
+		longDesc := strFromPayload(payload, "longDescription", "")
+
+		if name == "" || website == "" || shortDesc == "" || longDesc == "" {
+			writeError(w, http.StatusUnprocessableEntity, "INVALID_PAYLOAD", "submission payload is missing required fields", nil)
+			return
+		}
+
+		// Find category by slug
+		categories := api.store.ListCategories(false)
+		var categoryID string
+		for _, cat := range categories {
+			if cat.Slug == categorySlug || cat.Name == categorySlug {
+				categoryID = cat.ID
+				break
+			}
+		}
+
+		tool := api.store.CreateTool(domain.Tool{
+			Slug:             slugifyToolName(name),
+			Name:             name,
+			ShortDescription: shortDesc,
+			LongDescription:  longDesc,
+			CategoryID:       categoryID,
+			Difficulty:       domain.Difficulty(difficulty),
+			Icon:             strFromPayload(payload, "icon", "Terminal"),
+			Featured:         false,
+			Status:           domain.ToolStatusPublished,
+			WebsiteURL:       website,
+			GitHubURL:        github,
+		})
+
+		// Set tags from payload
+		if tagsRaw, ok := payload["tags"]; ok {
+			if tagsArr, ok := tagsRaw.([]interface{}); ok {
+				var tagNames []string
+				for _, t := range tagsArr {
+					if s, ok := t.(string); ok && s != "" {
+						tagNames = append(tagNames, s)
+					}
+				}
+				if len(tagNames) > 0 {
+					api.store.ReplaceToolTags(tool.ID, tagNames)
+				}
+			}
+		}
+
+		createdTool = &tool
+	}
+
+	response := map[string]any{
+		"id":             submission.ID,
+		"type":           submission.Type,
+		"submittedBy":    submission.SubmittedBy,
+		"submitterEmail": submission.SubmitterEmail,
+		"payload":        submission.Payload,
+		"status":         submission.Status,
+		"reviewNote":     submission.ReviewNote,
+		"createdAt":      submission.CreatedAt,
+		"reviewedAt":     submission.ReviewedAt,
+	}
+	if createdTool != nil {
+		response["createdTool"] = map[string]any{
+			"id":   createdTool.Slug,
+			"name": createdTool.Name,
+		}
+	}
+
+	writeJSON(w, http.StatusOK, response, nil)
+}
+
+func strFromPayload(payload map[string]any, key, fallback string) string {
+	if v, ok := payload[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return fallback
+}
+
+func slugifyToolName(name string) string {
+	s := strings.ToLower(strings.TrimSpace(name))
+	s = strings.ReplaceAll(s, " ", "-")
+	s = strings.ReplaceAll(s, "/", "-")
+	s = strings.ReplaceAll(s, "_", "-")
+	// Remove non-alphanumeric chars except dashes
+	var out strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
 }
 
 func (api *API) handleAdminAuditLogs(w http.ResponseWriter, r *http.Request) {

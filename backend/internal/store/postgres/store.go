@@ -137,6 +137,26 @@ func (s *Store) migrate(ctx context.Context) error {
 		}
 	}
 
+	// Migration: add 'type' column to tool_submissions if it doesn't exist
+	var hasTypeCol int
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'tool_submissions' AND column_name = 'type'`).Scan(&hasTypeCol)
+	if hasTypeCol == 0 {
+		if _, err := s.pool.Exec(ctx, `ALTER TABLE tool_submissions ADD COLUMN type varchar(50) not null default 'tool'`); err != nil {
+			fmt.Fprintf(os.Stderr, "Migration warning: could not add type column: %v\n", err)
+		} else {
+			fmt.Println("Migration: added 'type' column to tool_submissions")
+		}
+	}
+
+	// Migration: add comment for 'type' column if missing
+	var hasTypeComment int
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM pg_col_description WHERE objoid = 'tool_submissions'::regclass AND objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_name = 'tool_submissions' AND column_name = 'type')`).Scan(&hasTypeComment)
+	if hasTypeComment == 0 {
+		if _, err := s.pool.Exec(ctx, `COMMENT ON COLUMN tool_submissions.type IS '投稿类型：tool / feature / other'`); err != nil {
+			fmt.Fprintf(os.Stderr, "Migration warning: could not add type column comment: %v\n", err)
+		}
+	}
+
 	return nil
 }
 
@@ -655,14 +675,48 @@ func (s *Store) CreateSubmission(submission domain.Submission) domain.Submission
 	ctx := context.Background()
 	now := time.Now().UTC()
 	var id string
-	_ = s.pool.QueryRow(ctx,
+
+	submittedBy := nilIfEmpty(submission.SubmittedBy)
+	toolID := nilIfEmpty(submission.ToolID)
+
+	err := s.pool.QueryRow(ctx,
 		`INSERT INTO tool_submissions (type, submitted_by, tool_id, submitter_email, payload, status, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id::text`,
-		submission.Type, submission.SubmittedBy, submission.ToolID, submission.SubmitterEmail, submission.Payload, submission.Status, now,
+		submission.Type, submittedBy, toolID, submission.SubmitterEmail, submission.Payload, submission.Status, now,
 	).Scan(&id)
+	if err != nil {
+		// Log error but don't panic — caller should check for empty ID
+		fmt.Fprintf(os.Stderr, "CreateSubmission error: %v\n", err)
+	}
 	submission.ID = id
 	submission.CreatedAt = now
 	return submission
+}
+
+func (s *Store) SubmissionsByUser(userID string) ([]domain.Submission, int) {
+	ctx := context.Background()
+
+	var total int
+	_ = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM tool_submissions WHERE submitted_by = $1`, userID).Scan(&total)
+
+	rows, err := s.pool.Query(ctx,
+		`SELECT id::text, type, COALESCE(submitted_by::text, ''), COALESCE(tool_id::text, ''), COALESCE(submitter_email, ''), payload, status, COALESCE(reviewer_id::text, ''), COALESCE(review_note, ''), created_at, reviewed_at FROM tool_submissions WHERE submitted_by = $1 ORDER BY created_at DESC`,
+		userID,
+	)
+	if err != nil {
+		return nil, total
+	}
+	defer rows.Close()
+
+	var out []domain.Submission
+	for rows.Next() {
+		var sub domain.Submission
+		if err := rows.Scan(&sub.ID, &sub.Type, &sub.SubmittedBy, &sub.ToolID, &sub.SubmitterEmail, &sub.Payload, &sub.Status, &sub.ReviewerID, &sub.ReviewNote, &sub.CreatedAt, &sub.ReviewedAt); err != nil {
+			continue
+		}
+		out = append(out, sub)
+	}
+	return out, total
 }
 
 const sessionTTL = 24 * time.Hour

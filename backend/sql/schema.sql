@@ -74,6 +74,7 @@ create table tool_tags (
 -- 工具投稿表：用户提交的工具审核
 create table tool_submissions (
   id uuid primary key default gen_random_uuid(),        -- 投稿唯一标识
+  type varchar(50) not null default 'tool',             -- 投稿类型：tool / feature / other
   submitted_by uuid references users(id),               -- 投稿用户
   tool_id uuid references tools(id),                    -- 关联的已有工具（可选）
   submitter_email varchar(255),                         -- 投稿者邮箱
@@ -165,6 +166,7 @@ comment on column tools.created_at is '创建时间';
 comment on column tools.updated_at is '更新时间';
 
 comment on column tool_submissions.id is '投稿唯一标识';
+comment on column tool_submissions.type is '投稿类型：tool / feature / other';
 comment on column tool_submissions.submitted_by is '投稿用户';
 comment on column tool_submissions.tool_id is '关联的已有工具（可选）';
 comment on column tool_submissions.submitter_email is '投稿者邮箱';

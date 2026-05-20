@@ -214,14 +214,80 @@ func (api *API) handleSubmissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	submission := api.store.CreateSubmission(domain.Submission{
+	submission := domain.Submission{
 		Type:           request.Type,
 		SubmitterEmail: request.SubmitterEmail,
 		Payload:        request.Payload,
 		Status:         domain.SubmissionStatusPending,
-	})
+	}
+
+	// If authenticated, associate submission with the user
+	auth := r.Header.Get("Authorization")
+	if strings.HasPrefix(auth, "Bearer ") {
+		token := strings.TrimPrefix(auth, "Bearer ")
+		if user, ok := api.store.ValidateSession(token); ok {
+			submission.SubmittedBy = user.ID
+			if submission.SubmitterEmail == "" {
+				submission.SubmitterEmail = user.Email
+			}
+		}
+	}
+
+	submission = api.store.CreateSubmission(submission)
+	if submission.ID == "" {
+		writeError(w, http.StatusInternalServerError, "SUBMISSION_FAILED", "failed to create submission", nil)
+		return
+	}
 
 	writeJSON(w, http.StatusCreated, submission, nil)
+}
+
+func (api *API) handleMySubmissions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+		return
+	}
+
+	auth := r.Header.Get("Authorization")
+	if !strings.HasPrefix(auth, "Bearer ") {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing bearer token", nil)
+		return
+	}
+	token := strings.TrimPrefix(auth, "Bearer ")
+	user, ok := api.store.ValidateSession(token)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid token", nil)
+		return
+	}
+
+	submissions, total := api.store.SubmissionsByUser(user.ID)
+	data := make([]map[string]any, 0, len(submissions))
+	for _, sub := range submissions {
+		data = append(data, map[string]any{
+			"id":             sub.ID,
+			"type":           sub.Type,
+			"submitterEmail": sub.SubmitterEmail,
+			"payload":        sub.Payload,
+			"status":         sub.Status,
+			"reviewNote":     sub.ReviewNote,
+			"createdAt":      sub.CreatedAt,
+			"reviewedAt":     sub.ReviewedAt,
+		})
+	}
+
+	page := 1
+	pageSize := 20
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+
+	writeJSON(w, http.StatusOK, data, meta{
+		"page":       page,
+		"pageSize":   pageSize,
+		"total":      total,
+		"totalPages": totalPages,
+	})
 }
 
 func (api *API) toToolCard(tool domain.Tool) map[string]any {

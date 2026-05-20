@@ -15,6 +15,9 @@ import {
   Trash2,
   User as UserIcon,
   UserCog,
+  Send,
+  ExternalLink,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
@@ -24,11 +27,13 @@ import {
   revokeOtherSessions,
   revokeUserSession,
   updateProfile,
+  getMySubmissions,
   type UserSession,
+  type UserSubmission,
 } from '@/lib/auth';
 import styles from './page.module.css';
 
-type TabId = 'profile' | 'security' | 'sessions';
+type TabId = 'profile' | 'security' | 'sessions' | 'submissions';
 
 const ROLE_LABELS: Record<string, string> = {
   admin: '管理员',
@@ -93,6 +98,10 @@ export default function AccountPage() {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [revokingToken, setRevokingToken] = useState<string | null>(null);
 
+  // Submissions
+  const [submissions, setSubmissions] = useState<UserSubmission[]>([]);
+  const [submissionsLoading, setSubmissionsLoading] = useState(false);
+
   const fetchSessions = useCallback(async () => {
     if (!token) return;
     setSessionsLoading(true);
@@ -117,6 +126,16 @@ export default function AccountPage() {
       fetchSessions();
     }
   }, [activeTab, fetchSessions]);
+
+  useEffect(() => {
+    if (activeTab === 'submissions' && token) {
+      setSubmissionsLoading(true);
+      getMySubmissions(token)
+        .then(setSubmissions)
+        .catch(() => {})
+        .finally(() => setSubmissionsLoading(false));
+    }
+  }, [activeTab, token]);
 
   const initial = useMemo(() => (user ? getInitial(user.displayName) : '?'), [user]);
   const roleLabel = user ? ROLE_LABELS[user.role] ?? user.role : '';
@@ -331,6 +350,16 @@ export default function AccountPage() {
           >
             <Monitor size={14} />
             会话管理
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'submissions'}
+            className={`${styles.tab} ${activeTab === 'submissions' ? styles.tabActive : ''}`}
+            onClick={() => setActiveTab('submissions')}
+          >
+            <Send size={14} />
+            我的投稿
           </button>
         </div>
 
@@ -628,6 +657,84 @@ export default function AccountPage() {
               <div className={styles.sessionWarning}>
                 出于安全考虑，请勿在公共设备上保持登录。如发现异常活动，建议立即修改密码。
               </div>
+            </div>
+          </section>
+        )}
+
+        {/* Submissions Panel */}
+        {activeTab === 'submissions' && (
+          <section className={styles.panel}>
+            <header className={styles.panelHeader}>
+              <Send size={14} className={styles.panelTitleAccent} />
+              SUBMISSIONS // <span className={styles.panelTitleAccent}>MY TOOLS</span>
+            </header>
+            <div className={styles.panelBody}>
+              {submissionsLoading ? (
+                <div className={styles.sessionsLoading}>
+                  <span className={styles.spinner} style={{ borderTopColor: 'var(--color-cta)' }} />
+                  <span>加载投稿列表…</span>
+                </div>
+              ) : submissions.length === 0 ? (
+                <div className={styles.sessionsEmpty}>
+                  暂无投稿记录。
+                  <Link href="/tools/submit" className={styles.loginLink} style={{ marginLeft: 12, marginTop: 0 }}>
+                    投稿新工具
+                  </Link>
+                </div>
+              ) : (
+                <div className={styles.sessionList}>
+                  {submissions.map((sub) => {
+                    const statusColors: Record<string, string> = {
+                      pending: 'rgba(245, 158, 11, 0.15)',
+                      approved: 'rgba(34, 197, 94, 0.15)',
+                      rejected: 'rgba(239, 68, 68, 0.15)',
+                    };
+                    const statusLabels: Record<string, string> = {
+                      pending: '审核中',
+                      approved: '已通过',
+                      rejected: '已拒绝',
+                    };
+                    const statusColor = statusColors[sub.status] || statusColors.pending;
+                    const statusLabel = statusLabels[sub.status] || sub.status;
+                    const toolName = sub.payload?.name ?? '未知工具';
+                    const toolCategory = sub.payload?.category ?? '';
+
+                    return (
+                      <div key={sub.id} className={styles.sessionCard}>
+                        <div className={styles.sessionCardLeft}>
+                          <div className={styles.sessionIcon}>
+                            <FileText size={18} />
+                          </div>
+                          <div>
+                            <div className={styles.sessionTitle}>
+                              {toolName}
+                              <span
+                                className={styles.currentBadge}
+                                style={{
+                                  background: statusColor,
+                                  borderColor: statusColor.replace('0.15', '0.3'),
+                                  color: sub.status === 'pending' ? '#fde68a' : sub.status === 'approved' ? '#bbf7d0' : '#fecaca',
+                                }}
+                              >
+                                {statusLabel}
+                              </span>
+                            </div>
+                            <div className={styles.sessionMeta}>
+                              <span><Clock size={10} /> {formatDate(sub.createdAt)}</span>
+                              {toolCategory && <span><ExternalLink size={10} /> {toolCategory}</span>}
+                            </div>
+                            {sub.reviewNote && (
+                              <div className={styles.sessionMeta} style={{ marginTop: 4, color: 'var(--color-text-muted)' }}>
+                                <span>审核备注：{sub.reviewNote}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </section>
         )}

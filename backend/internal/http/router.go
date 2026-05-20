@@ -26,6 +26,7 @@ func NewRouter(cfg config.Config, store store.Store) http.Handler {
 	mux.HandleFunc("/api/v1/tools", api.handleTools)
 	mux.HandleFunc("/api/v1/tools/", api.handleToolDetail)
 	mux.HandleFunc("/api/v1/submissions", api.handleSubmissions)
+	mux.HandleFunc("/api/v1/submissions/me", api.requireAuth(api.handleMySubmissions))
 	mux.HandleFunc("/api/v1/auth/login", api.handleLogin)
 	mux.HandleFunc("/api/v1/auth/register", api.handleRegister)
 	mux.HandleFunc("/api/v1/auth/me", api.requireAuth(api.handleMe))

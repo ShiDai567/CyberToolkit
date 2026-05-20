@@ -231,3 +231,53 @@ export async function revokeOtherSessions(
   );
   return payload.data;
 }
+
+export interface SubmissionPayload {
+  name: string;
+  website: string;
+  github?: string;
+  category: string;
+  difficulty: string;
+  shortDescription: string;
+  longDescription: string;
+  tags: string[];
+  icon?: string;
+}
+
+export interface UserSubmission {
+  id: string;
+  type: string;
+  submitterEmail: string;
+  payload: SubmissionPayload;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewNote?: string;
+  createdAt: string;
+  reviewedAt?: string;
+}
+
+export async function submitTool(
+  token: string,
+  data: SubmissionPayload,
+): Promise<UserSubmission> {
+  const payload = await postAuthJSON<{ data: UserSubmission }>(
+    '/api/v1/submissions',
+    {
+      type: 'tool',
+      payload: data,
+    },
+    token,
+  );
+  return payload.data;
+}
+
+export async function getMySubmissions(token: string): Promise<UserSubmission[]> {
+  const response = await fetch(`${getClientAPIBaseURL()}/api/v1/submissions/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const text = await response.text();
+  const result = JSON.parse(text) as { data: UserSubmission[] } | ApiError;
+  if (!response.ok) {
+    throw new Error((result as ApiError).error?.message || `Request failed: ${response.status}`);
+  }
+  return (result as { data: UserSubmission[] }).data ?? [];
+}
